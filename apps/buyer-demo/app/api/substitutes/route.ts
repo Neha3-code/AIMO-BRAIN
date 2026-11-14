@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
   }
   try {
     const result = await scenario5RecipeChemistry(buildClient(), productId);
-    return NextResponse.json({ ...result, id: "custom-substitutes", name: "Try it yourself", tagline: "Recipe-safe substitutes" });
+    return NextResponse.json({ ...result, id: "custom-substitutes", name: "Try it yourself", tagline: "Policy-compliant substitutes" });
   } catch (err) {
     return NextResponse.json({ error: "substitutes_failed", message: (err as Error).message }, { status: 500 });
   }
