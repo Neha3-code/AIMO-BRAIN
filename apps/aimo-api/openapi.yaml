@@ -160,3 +160,19 @@ paths:
           schema: { type: string }
       responses:
         "200": { description: Audit events }
+  /v1/buyers/{id}:
+    get:
+      summary: A buyer's own Aimo-side guardrail thresholds (credit limit, auto-approval ceiling)
+      description: >
+        Read-only. A buyer can only read its own profile (403 otherwise) — this
+        is what a "visible permissions" UI renders instead of hardcoding the
+        guardrail thresholds client-side.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Buyer guardrail profile }
+        "403": { description: Not this buyer's own profile }
+        "404": { description: Unknown buyer }

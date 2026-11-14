@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Quote, QuoteAlternative, QuoteLine } from "@aimo/shared";
 import { getCatalogProducts } from "../catalog.js";
 import { getUpstreamPrices, getUpstreamAvailability, type UpstreamAvailability, type UpstreamPrice } from "../upstream.js";
+import { buildPriceAvailabilityEnvelope } from "../trustEnvelope.js";
 import { query } from "../db.js";
 import { newId } from "../ids.js";
 import { requireBuyerAuth, type AuthedRequest } from "../auth.js";
@@ -66,7 +67,8 @@ export function registerQuoteRoutes(app: FastifyInstance) {
           status: "available",
           unit_price_eur: price,
           line_total_eur: price !== null ? Math.round(price * line.qty * 100) / 100 : null,
-          alternatives: []
+          alternatives: [],
+          envelope: buildPriceAvailabilityEnvelope(line.product_id, priceById.get(line.product_id), avail)
         });
         continue;
       }
@@ -104,6 +106,7 @@ export function registerQuoteRoutes(app: FastifyInstance) {
               ? Math.max(0, Math.round((new Date(schedule.availableDate).getTime() - Date.now()) / 86400000))
               : null,
             allergens: c?.allergens ?? [],
+            envelope: buildPriceAvailabilityEnvelope(id, p, a),
             rank: 0
           };
         })
@@ -116,7 +119,8 @@ export function registerQuoteRoutes(app: FastifyInstance) {
         status: "unavailable",
         unit_price_eur: null,
         line_total_eur: null,
-        alternatives
+        alternatives,
+        envelope: buildPriceAvailabilityEnvelope(line.product_id, priceById.get(line.product_id), avail)
       });
     }
 

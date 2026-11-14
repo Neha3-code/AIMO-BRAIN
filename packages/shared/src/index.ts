@@ -58,6 +58,8 @@ export interface QuoteAlternative {
   availability: ProductPriceClaim["availability"];
   delivery_lead_time_days: number | null;
   allergens: AllergenFact[];
+  /** The underlying trust-enveloped claim this ranking/price is based on, for display. */
+  envelope: TrustEnvelope<ProductPriceClaim>;
 }
 
 export interface QuoteLine {
@@ -67,6 +69,8 @@ export interface QuoteLine {
   unit_price_eur: number | null;
   line_total_eur: number | null;
   alternatives: QuoteAlternative[];
+  /** Trust envelope backing the requested product's own price/availability claim. */
+  envelope: TrustEnvelope<ProductPriceClaim>;
 }
 
 export interface Quote {

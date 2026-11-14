@@ -1,4 +1,12 @@
-import type { Order, ProductLookupResult, Quote } from "@aimo/shared";
+import type { AuditEvent, Order, ProductLookupResult, Quote } from "@aimo/shared";
+
+export interface BuyerProfile {
+  id: string;
+  display_name: string;
+  contract_tier: string;
+  credit_limit_eur: number;
+  aimo_side_auto_approve_limit_eur: number;
+}
 
 export interface AimoClientConfig {
   baseUrl: string;
@@ -55,7 +63,10 @@ export function createAimoClient(config: AimoClientConfig) {
       });
     },
     getAuditTrail(orderId: string) {
-      return request<{ order_id: string; events: unknown[] }>(config, `/v1/audit/${orderId}`);
+      return request<{ order_id: string; events: AuditEvent[] }>(config, `/v1/audit/${orderId}`);
+    },
+    getBuyerProfile(buyerId: string) {
+      return request<BuyerProfile>(config, `/v1/buyers/${buyerId}`);
     }
   };
 }

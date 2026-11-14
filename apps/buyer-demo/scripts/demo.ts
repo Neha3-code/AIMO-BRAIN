@@ -6,7 +6,7 @@ async function main() {
   for (const result of results) {
     console.log(`\n=== ${result.name} ===`);
     for (const step of result.steps) {
-      console.log(`[${step.label}] ${step.detail}`);
+      console.log(`[${step.stage}/${step.status}] ${step.title}: ${step.detail}`);
     }
     console.log(`Result: ${result.ok ? "OK" : "FAILED"}`);
   }
