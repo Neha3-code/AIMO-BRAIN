@@ -109,6 +109,10 @@ export interface QuoteLine {
   alternatives_ranking?: string;
   /** Facts for the requested product itself (see QuoteAlternative.facts). */
   facts?: ProductFacts;
+  /** Allergens of the requested product itself — disclosed so the buyer can check the product it's
+   *  actually about to purchase, not just its substitution alternatives. Optional only because
+   *  servers older than this contract version don't send it. */
+  allergens?: AllergenFact[];
   /** Trust envelope backing the requested product's own price/availability claim. */
   envelope: TrustEnvelope<ProductPriceClaim>;
 }

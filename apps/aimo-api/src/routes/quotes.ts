@@ -59,6 +59,7 @@ export function registerQuoteRoutes(app: FastifyInstance) {
           line_total_eur: price !== null ? Math.round(price * line.qty * 100) / 100 : null,
           alternatives: [],
           facts: productFacts(line.product_id, catalogProduct),
+          allergens: catalogProduct?.allergens ?? [],
           envelope: buildPriceAvailabilityEnvelope(line.product_id, priceById.get(line.product_id), avail)
         });
         continue;
@@ -81,6 +82,7 @@ export function registerQuoteRoutes(app: FastifyInstance) {
         alternatives,
         alternatives_ranking: ALTERNATIVES_RANKING,
         facts: productFacts(line.product_id, catalogProduct),
+        allergens: catalogProduct?.allergens ?? [],
         envelope: buildPriceAvailabilityEnvelope(line.product_id, priceById.get(line.product_id), avail)
       });
     }

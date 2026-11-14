@@ -809,7 +809,8 @@ footer.note {
   background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 12px;
+  width: 100%;
 }
 
 .explorer-item:hover {
@@ -822,18 +823,97 @@ footer.note {
 }
 
 .explorer-item-name {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+  line-height: 1.4;
 }
 
-.explorer-item-meta {
+.explorer-item-price-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  flex-wrap: wrap;
-  font-size: 11px;
+  margin-bottom: 10px;
+}
+
+.explorer-item-price {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.explorer-item-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.explorer-metric-value {
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.explorer-metric-label {
+  font-size: 10px;
   color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-top: 2px;
+}
+
+.explorer-warning {
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--red);
+  background: var(--red-dim);
+  border: 1px solid #5c2130;
+  border-radius: 6px;
+  padding: 8px 10px;
+  line-height: 1.5;
+}
+
+/* ---- recommended products ---- */
+
+.recommended-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+@media (max-width: 720px) {
+  .recommended-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.recommended-card {
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: var(--panel-2);
+  border: 1px solid var(--accent-dim);
+  border-radius: 10px;
+  padding: 12px 14px;
+  width: 100%;
+  transition: border-color 0.15s ease;
+}
+
+.recommended-card:hover {
+  border-color: var(--accent);
+}
+
+.recommended-card-name {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.recommended-card-note {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.4;
 }
 
 .explorer-qty-row {

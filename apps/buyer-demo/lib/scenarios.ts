@@ -96,6 +96,9 @@ export interface ScenarioResult {
   /** The one or two quote lines actually relevant to this scenario's narrative, when the
    *  full quote (e.g. scenario 3/4's multi-candidate probe) contains unrelated noise lines. */
   relevantLines?: QuoteLine[];
+  /** True when the product has zero registered substitutes — distinct from having substitutes
+   *  that were evaluated and rejected. */
+  noRegisteredSubstitutes?: boolean;
 }
 
 function step(steps: ScenarioStep[], stage: Stage, status: StepStatus, title: string, detail: string, data?: unknown) {
@@ -621,6 +624,30 @@ export async function scenario5RecipeChemistry(client: AimoClient = buildClient(
     subs
   );
 
+  if (subs.alternatives.length === 0) {
+    step(steps, "result", "info", "Buyer decision", "No registered substitutes to evaluate — nothing selected, no order placed.");
+    return {
+      id: "5",
+      name,
+      tagline,
+      outcome: "no_viable_alternative",
+      headline: "No registered substitutes found",
+      subheadline: `Aimo's catalogue has no registered substitutes for ${subs.name}. No alternatives were available for the buyer agent to evaluate.`,
+      transactionId: null,
+      transactionIdKind: null,
+      ok: true,
+      steps,
+      buyerPolicy: { status: "info", reason: "No registered substitutes to evaluate — nothing selected, no order placed." },
+      aimoPolicy: null,
+      quote: null,
+      order: null,
+      audit: [],
+      requestedProduct: { id: subs.product_id, name: subs.name },
+      originalFacts: original,
+      noRegisteredSubstitutes: true
+    };
+  }
+
   const { alternatives, chosen } = reviewAlternatives(steps, original, subs.alternatives);
 
   const buyerPolicy: PolicyPanel = chosen
@@ -676,10 +703,35 @@ export async function runCustomPurchase(productId: string, qty: number, client: 
 
   if (line.status === "unavailable") {
     step(steps, "quote", "complete", "Quote obtained", `${line.requested_product_name} is unavailable — see disclosed alternatives below.`, quote);
+
+    if (line.alternatives.length === 0) {
+      step(steps, "result", "info", "Buyer decision", "No registered substitutes to evaluate — nothing selected, no order placed.");
+      return {
+        id: "custom",
+        name,
+        tagline,
+        outcome: "no_viable_alternative",
+        headline: "No registered substitutes found",
+        subheadline: `Aimo's catalogue has no registered substitutes for ${line.requested_product_name}. No alternatives were available for the buyer agent to evaluate.`,
+        transactionId: quote.quote_id,
+        transactionIdKind: "quote",
+        ok: true,
+        steps,
+        buyerPolicy: { status: "info", reason: "No registered substitutes to evaluate — nothing selected, no order placed." },
+        aimoPolicy: null,
+        quote,
+        order: null,
+        audit: [],
+        requestedProduct: { id: line.requested_product_id, name: line.requested_product_name },
+        originalFacts: factsOf(line),
+        noRegisteredSubstitutes: true
+      };
+    }
+
     const { alternatives, chosen } = reviewAlternatives(steps, factsOf(line), line.alternatives);
     const buyerPolicy: PolicyPanel = chosen
       ? { status: "passed", reason: `Selected Aimo rank ${chosen.rank}: ${chosen.product_id} (${chosen.name}) — the closest recipe match that also passes this kitchen's allergen, carbon and delivery-reliability rules.` }
-      : { status: "blocked", reason: line.alternatives.length === 0 ? "No substitutes are registered for this product in the catalog." : "No disclosed alternative passes this kitchen's policy (allergens, recipe chemistry, carbon, delivery reliability) — reported honestly instead of silently substituting." };
+      : { status: "blocked", reason: "No disclosed alternative passes this kitchen's policy (allergens, recipe chemistry, carbon, delivery reliability) — reported honestly instead of silently substituting." };
     step(steps, "result", chosen ? "complete" : "blocked", "Buyer decision", chosen ? "Alternative selected." : "No compliant alternative.");
 
     return {

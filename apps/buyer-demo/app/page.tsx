@@ -2,7 +2,7 @@
 
 import { Fragment, useState } from "react";
 import { formatEur, type AlternativeReview, type Outcome, type ScenarioResult, type StepStatus } from "../lib/scenarios";
-import { RELIABILITY_DISCLOSURE_CAVEAT, type CheckResult } from "../lib/policyEngine";
+import { HOTEL_ESPOO_POLICY, RELIABILITY_DISCLOSURE_CAVEAT, type CheckResult } from "../lib/policyEngine";
 import type { AuditEvent, ProductFacts, ProductLookupResult, QuoteLine, TrustEnvelope } from "@aimo/shared";
 
 const SCENARIO_CARDS = [
@@ -63,6 +63,16 @@ const EXAMPLE_SEARCHES: { label: string; query: string }[] = [
   { label: "Find salmon", query: "salmon" },
   { label: "Search for yoghurt", query: "yoghurt" },
   { label: "Find wheat bread", query: "wheat bread" }
+];
+
+/** A curated, separate path from free-text search — guaranteed to demonstrate real
+ *  selected / needs-review / rejected outcomes instead of whatever a plain keyword search
+ *  happens to surface. Each entry is a real catalog product (verified against live data). */
+const RECOMMENDED_PRODUCTS: { id: string; query: string; label: string; note: string }[] = [
+  { id: "464237", query: "coffee milk 1 l lactose free", label: "Valio coffee milk (lactose-free)", note: "One substitute selected, one needs manual review, one rejected on carbon" },
+  { id: "468928", query: "wheat bread 75x35g", label: "Schulstad wheat bread", note: "Its only registered substitute violates this kitchen's allergen policy" },
+  { id: "471068", query: "heinz beans in tomato sauce", label: "Heinz Beans in tomato sauce", note: "Two real substitutes, ranked and evaluated" },
+  { id: "460105", query: "kinder bueno", label: "Kinder Bueno", note: "The product itself contains a banned allergen — see what happens if you try to order it directly" }
 ];
 
 function ScenarioIcon({ name }: { name: "cart" | "userCheck" | "shield" | "box" | "flask" }) {
@@ -393,8 +403,28 @@ function RecipeMethodologyNote() {
   );
 }
 
+function NoRegisteredSubstitutes({ result }: { result: ScenarioResult }) {
+  if (!result.noRegisteredSubstitutes || !result.requestedProduct) return null;
+  return (
+    <div className="detail-card">
+      <h4>No registered substitutes found</h4>
+      <div className="kv-row">
+        <span className="k">Original product</span>
+        <span className="v">
+          {result.requestedProduct.name} ({result.requestedProduct.id})
+        </span>
+      </div>
+      <p className="mock-note" style={{ marginTop: 8 }}>
+        Aimo's catalogue has no registered substitutes for this product. No alternatives were available for the buyer agent to
+        evaluate. No substitute was selected and no order was placed.
+      </p>
+      <Pill status="info">no substitute available</Pill>
+    </div>
+  );
+}
+
 function AlternativesTable({ result }: { result: ScenarioResult }) {
-  if (!result.alternatives || !result.requestedProduct) return null;
+  if (!result.alternatives || result.alternatives.length === 0 || !result.requestedProduct) return null;
   const single = result.alternatives.length === 1;
   const singleRejected = single && result.alternatives[0].buyerDecision === "rejected";
   const lookupOnly = result.transactionId === null;
@@ -799,12 +829,52 @@ function TransactionWorkspace({ result }: { result: ScenarioResult }) {
       <PolicyPanels result={result} />
       <DeliveryDateCard result={result} />
       <SustainabilityCard result={result} />
+      <NoRegisteredSubstitutes result={result} />
       <AlternativesTable result={result} />
       <BasketOutcome result={result} />
       <GovernanceCheckCard result={result} />
       <ApprovalDetail result={result} />
       <TechnicalEvidence result={result} />
     </div>
+  );
+}
+
+function bannedAllergenHits(allergens: { code: string; relation: string }[]): string[] {
+  return allergens.filter((a) => a.relation === "CONTAINS" && HOTEL_ESPOO_POLICY.bannedAllergenCodes.includes(a.code)).map((a) => a.code);
+}
+
+function ProductCard({ r, isSelected, onSelect }: { r: ProductLookupResult; isSelected: boolean; onSelect: () => void }) {
+  const containsCodes = r.allergens.filter((a) => a.relation === "CONTAINS").map((a) => a.code);
+  const bannedHits = bannedAllergenHits(r.allergens);
+  const carbon = r.carbon_footprint_kg_co2e_per_kg !== null ? Number(r.carbon_footprint_kg_co2e_per_kg) : null;
+  const reliability = r.delivery_reliability !== null ? Number(r.delivery_reliability) : null;
+  return (
+    <button className={`explorer-item ${isSelected ? "explorer-item-selected" : ""}`} onClick={onSelect} type="button">
+      <div className="explorer-item-name">{r.name}</div>
+      <div className="explorer-item-price-row">
+        <span className="explorer-item-price">{r.envelope.claim.price ? formatEur(r.envelope.claim.price.amount) : "price unavailable"}</span>
+        <Pill status={r.envelope.claim.availability.status === "out_of_stock" ? "blocked" : "passed"}>
+          {r.envelope.claim.availability.status.replace(/_/g, " ")}
+        </Pill>
+      </div>
+      <div className="explorer-item-grid">
+        <div className="explorer-metric">
+          <div className="explorer-metric-value">{carbon !== null ? fmtNum(carbon) : "—"}</div>
+          <div className="explorer-metric-label">kg CO₂e/kg</div>
+        </div>
+        <div className="explorer-metric">
+          <div className="explorer-metric-value">{reliability !== null ? fmtPct(reliability) : "no history"}</div>
+          <div className="explorer-metric-label">On-time delivery</div>
+        </div>
+        <div className="explorer-metric">
+          <div className="explorer-metric-value">{containsCodes.length > 0 ? containsCodes.join(", ") : "none"}</div>
+          <div className="explorer-metric-label">Allergen codes</div>
+        </div>
+      </div>
+      {bannedHits.length > 0 && (
+        <div className="explorer-warning">⚠ Contains banned allergen code(s) {bannedHits.join(", ")} — shown for inspection only; this kitchen's policy will block ordering it directly.</div>
+      )}
+    </button>
   );
 }
 
@@ -818,10 +888,7 @@ function ProductExplorer() {
   const [customResult, setCustomResult] = useState<ScenarioResult | { error: string; message?: string } | null>(null);
   const [running, setRunning] = useState(false);
 
-  async function search(e?: React.FormEvent, overrideQuery?: string) {
-    e?.preventDefault();
-    const q = overrideQuery ?? query;
-    if (overrideQuery !== undefined) setQuery(overrideQuery);
+  async function runSearch(q: string): Promise<ProductLookupResult[]> {
     setSearching(true);
     setSearchError(null);
     setSelected(null);
@@ -836,12 +903,27 @@ function ProductExplorer() {
       if (data.error) {
         setSearchError(data.message ?? data.error);
         setSearchResults([]);
-      } else {
-        setSearchResults(data.results);
+        return [];
       }
+      setSearchResults(data.results);
+      return data.results;
     } finally {
       setSearching(false);
     }
+  }
+
+  async function search(e?: React.FormEvent, overrideQuery?: string) {
+    e?.preventDefault();
+    const q = overrideQuery ?? query;
+    if (overrideQuery !== undefined) setQuery(overrideQuery);
+    await runSearch(q);
+  }
+
+  async function selectRecommended(item: (typeof RECOMMENDED_PRODUCTS)[number]) {
+    setQuery(item.query);
+    const results = await runSearch(item.query);
+    const match = results.find((r) => r.envelope.claim.product_id === item.id) ?? results[0] ?? null;
+    setSelected(match);
   }
 
   async function runCustom(mode: "order" | "substitutes") {
@@ -861,14 +943,35 @@ function ProductExplorer() {
     }
   }
 
+  const selectedBannedHits = selected ? bannedAllergenHits(selected.allergens) : [];
+
   return (
     <div className="workspace explorer-workspace" id="explorer">
       <h2 style={{ marginTop: 0 }}>Test AIMO BRAIN with any product</h2>
       <p className="explorer-lede">
         Search the live Junction26 product catalogue — 17,546 real SKUs — and watch the AI purchasing workflow make its
-        decisions: the exact same quote → buyer policy → order pipeline as the scenarios above, nothing special-cased. Or ask for its
-        registered substitutes and see which ones keep the recipe working.
+        decisions: the exact same quote → buyer policy → order pipeline as the scenarios above, nothing special-cased.
       </p>
+
+      <div className="section-title" style={{ margin: "0 0 10px" }}>
+        Recommended products to try
+      </div>
+      <p className="explorer-lede" style={{ marginBottom: 12 }}>
+        A free-text search over 17,546 real SKUs will surface real noise — that's honest, not a bug, but it's the wrong
+        starting point for a live demo. These four are curated to show a real selected / manual-review / rejected mix.
+      </p>
+      <div className="recommended-grid">
+        {RECOMMENDED_PRODUCTS.map((item) => (
+          <button key={item.id} type="button" className="recommended-card" onClick={() => selectRecommended(item)}>
+            <div className="recommended-card-name">{item.label}</div>
+            <div className="recommended-card-note">{item.note}</div>
+          </button>
+        ))}
+      </div>
+
+      <div className="section-title" style={{ margin: "24px 0 10px" }}>
+        Or search the full catalogue yourself
+      </div>
       <div className="explorer-chips">
         {EXAMPLE_SEARCHES.map((ex) => (
           <button key={ex.label} type="button" className="explorer-chip" onClick={() => search(undefined, ex.query)}>
@@ -888,31 +991,26 @@ function ProductExplorer() {
       {searchResults && (
         <div className="explorer-results">
           {searchResults.length === 0 && <p className="mock-note">No matches in the catalog for that search.</p>}
-          {searchResults.map((r) => {
-            const id = r.envelope.claim.product_id;
-            const isSelected = selected?.envelope.claim.product_id === id;
-            const containsCodes = r.allergens.filter((a) => a.relation === "CONTAINS").map((a) => a.code);
-            return (
-              <button className={`explorer-item ${isSelected ? "explorer-item-selected" : ""}`} key={id} onClick={() => setSelected(r)} type="button">
-                <div className="explorer-item-name">{r.name}</div>
-                <div className="explorer-item-meta">
-                  {r.envelope.claim.price ? formatEur(r.envelope.claim.price.amount) : "price unavailable"}
-                  <Pill status={r.envelope.claim.availability.status === "out_of_stock" ? "blocked" : "passed"}>
-                    {r.envelope.claim.availability.status.replace(/_/g, " ")}
-                  </Pill>
-                  {containsCodes.length > 0 && <span>allergens: {containsCodes.join(", ")}</span>}
-                  {r.carbon_footprint_kg_co2e_per_kg !== null && <span>{fmtNum(Number(r.carbon_footprint_kg_co2e_per_kg))} kg CO₂e/kg</span>}
-                  {r.delivery_reliability !== null && <span>{fmtPct(Number(r.delivery_reliability))} on-time</span>}
-                </div>
-              </button>
-            );
-          })}
+          {searchResults.map((r) => (
+            <ProductCard
+              r={r}
+              key={r.envelope.claim.product_id}
+              isSelected={selected?.envelope.claim.product_id === r.envelope.claim.product_id}
+              onSelect={() => setSelected(r)}
+            />
+          ))}
         </div>
       )}
 
       {selected && (
         <div className="detail-card">
           <h4>Selected: {selected.name}</h4>
+          {selectedBannedHits.length > 0 && (
+            <div className="explorer-warning" style={{ marginBottom: 10 }}>
+              ⚠ This product contains banned allergen code(s) {selectedBannedHits.join(", ")}. It's selected here for inspection
+              only — the buyer policy will reject a direct order of it, and only a compliant substitute can be purchased.
+            </div>
+          )}
           <div className="explorer-qty-row">
             <label className="explorer-qty-label">
               Quantity
@@ -925,10 +1023,10 @@ function ProductExplorer() {
               />
             </label>
             <button className="run-btn" onClick={() => runCustom("order")} disabled={running}>
-              {running ? "Running…" : "Run through the agent"}
+              {running ? "Running…" : "Evaluate purchase with AI"}
             </button>
             <button className="run-btn run-btn-secondary" onClick={() => runCustom("substitutes")} disabled={running}>
-              Find policy-compliant substitutes
+              Find compliant substitutes
             </button>
           </div>
         </div>

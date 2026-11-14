@@ -56,12 +56,21 @@ function violatesBan(allergens: AllergenFact[], banned: string[]): string[] {
   return allergens.filter((a) => a.relation === "CONTAINS" && banned.includes(a.code)).map((a) => a.code);
 }
 
-/** Applied strictly buyer-side, AFTER the HTTP response comes back from Aimo. */
+/** Applied strictly buyer-side, AFTER the HTTP response comes back from Aimo. Checks the product
+ *  actually being purchased on an available line (its own allergens — easy to miss, since it's
+ *  tempting to only ever check substitution alternatives), and every alternative disclosed for an
+ *  unavailable line. */
 export function checkCompliance(policy: KitchenPolicy, lines: QuoteLine[]): PolicyDecision {
   const reasons: string[] = [];
 
   for (const line of lines) {
-    if (line.status === "available") continue;
+    if (line.status === "available") {
+      const hits = violatesBan(line.allergens ?? [], policy.bannedAllergenCodes);
+      if (hits.length > 0) {
+        reasons.push(`${line.requested_product_name} (${line.requested_product_id}) contains banned allergen code(s) ${hits.join(", ")} — cannot be purchased as-is per this kitchen's policy.`);
+      }
+      continue;
+    }
     for (const alt of line.alternatives) {
       const hits = violatesBan(alt.allergens, policy.bannedAllergenCodes);
       if (hits.length > 0) {
