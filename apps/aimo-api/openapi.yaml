@@ -1,0 +1,162 @@
+openapi: 3.0.3
+info:
+  title: Valio Aimo Trusted Trade Interface
+  version: 1.0.0
+  description: >
+    The interface Valio Aimo exposes so an authorized, external purchasing
+    agent can look up products, get a binding quote, place an order, and
+    know when a human has to sign off. Live price and availability are
+    proxied from Valio Aimo's real Junction26 mock backend
+    (junction26.valioaimo.fi); everything else (catalog facts, substitution
+    graph, allergen disclosure, approval guardrail, audit trail) is this
+    service's own layer on top.
+servers:
+  - url: /v1
+security:
+  - ApiKeyAuth: []
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  schemas:
+    TrustEnvelope:
+      type: object
+      properties:
+        claim:
+          type: object
+          properties:
+            product_id: { type: string }
+            price:
+              type: object
+              nullable: true
+              properties:
+                amount: { type: number }
+                currency: { type: string }
+                unit: { type: string }
+            availability:
+              type: object
+              properties:
+                status: { type: string, enum: [in_stock, out_of_stock, unknown, terminal_supplier] }
+                quantity: { type: number, nullable: true }
+        provenance:
+          type: object
+          properties:
+            issuer: { type: string, enum: [Valio Aimo] }
+            source_system: { type: string }
+            observed_at: { type: string, format: date-time }
+        validity:
+          type: object
+          properties:
+            expires_at: { type: string, format: date-time }
+        verification:
+          type: object
+          properties:
+            status: { type: string, enum: [mock_verified] }
+            reference_id: { type: string }
+paths:
+  /v1/products:
+    get:
+      summary: Structured, informational product lookup
+      parameters:
+        - in: query
+          name: query
+          schema: { type: string }
+        - in: query
+          name: category
+          schema: { type: string }
+        - in: query
+          name: max_price
+          schema: { type: number }
+      responses:
+        "200":
+          description: Catalog facts plus a live trust envelope per result
+  /v1/quote:
+    post:
+      summary: Request a locked, expiring, immutable offer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [buyer_id, lines]
+              properties:
+                buyer_id: { type: string }
+                lines:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      product_id: { type: string }
+                      qty: { type: number }
+      responses:
+        "200":
+          description: Quote with ranked alternatives when a line is unavailable
+  /v1/quote/{id}:
+    get:
+      summary: Retrieve a previously issued quote and its current status
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Quote }
+        "404": { description: Not found }
+  /v1/orders:
+    post:
+      summary: Commit a quote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quote_id]
+              properties:
+                quote_id: { type: string }
+      responses:
+        "200": { description: Order (confirmed or held_for_approval) }
+        "409": { description: Quote expired or already consumed }
+  /v1/orders/{id}:
+    get:
+      summary: Current order status and line-level detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Order }
+  /v1/orders/{id}/approve:
+    post:
+      summary: Human (on the side named in approval.owner) clears a held order
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [actor]
+              properties:
+                actor: { type: string, enum: ["human:buyer", "human:aimo"] }
+      responses:
+        "200": { description: Order (now confirmed) }
+        "403": { description: Actor does not own this hold }
+  /v1/audit/{order_id}:
+    get:
+      summary: Append-only, human-readable audit trace for an order
+      parameters:
+        - in: path
+          name: order_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Audit events }

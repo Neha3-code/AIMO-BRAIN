@@ -1,0 +1,19 @@
+{
+  "name": "aimo-brain",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev:api": "npm run dev -w @aimo/aimo-api",
+    "dev:web": "npm run dev -w @aimo/buyer-demo",
+    "seed": "npm run seed -w @aimo/aimo-api",
+    "migrate": "npm run migrate -w @aimo/aimo-api",
+    "demo": "npm run demo -w @aimo/buyer-demo"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
