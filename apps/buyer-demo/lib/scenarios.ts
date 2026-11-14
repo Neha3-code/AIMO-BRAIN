@@ -2,7 +2,7 @@ import { createAimoClient, type AimoClient } from "./aimoClient";
 import { HOTEL_ESPOO_POLICY, checkCompliance, pickAllowedAlternative } from "./policyEngine";
 import type { AllergenFact, AuditEvent, Order, Quote, QuoteLine } from "@aimo/shared";
 
-export type Stage = "request" | "quote" | "buyer_policy" | "aimo_policy" | "approval" | "audit" | "result";
+export type Stage = "request" | "quote" | "buyer_policy" | "aimo_policy" | "approval" | "order" | "audit" | "result";
 export type StepStatus = "complete" | "passed" | "blocked" | "human_review" | "pending" | "rejected" | "info";
 export type Outcome = "confirmed_auto" | "confirmed_after_approval" | "held" | "no_viable_alternative" | "blocked" | "partial" | "substituted" | "both_ready";
 
@@ -57,7 +57,7 @@ export interface ScenarioResult {
   requestedProduct?: { id: string; name: string };
   alternatives?: AlternativeReview[];
   alternativesNote?: string;
-  readyToOrderEur?: number;
+  eligibleLineValueEur?: number;
   /** The one or two quote lines actually relevant to this scenario's narrative, when the
    *  full quote (e.g. scenario 3/4's multi-candidate probe) contains unrelated noise lines. */
   relevantLines?: QuoteLine[];
@@ -88,11 +88,18 @@ export async function scenario1Autonomous(client: AimoClient = buildClient()): P
   const name = "Autonomous purchasing";
   const tagline = "Happy path";
 
-  step(steps, "request", "complete", "Buyer request received", "1,000 L of lactose-free milk, by Monday, price/availability-driven choice.");
+  step(steps, "request", "complete", "Buyer request received", "1,000 L of lactose-free milk, price/availability-driven choice.");
 
   const quote = await client.requestQuote(BUYER_ID, [{ product_id: "464073", qty: 1000 }]);
   const line = quote.lines[0];
-  step(steps, "quote", "complete", "Quote obtained", `€${quote.total_eur.toFixed(2)} for 1,000 L of ${line.requested_product_name}.`, quote);
+  step(
+    steps,
+    "quote",
+    "complete",
+    "Quote obtained",
+    `€${quote.total_eur.toFixed(2)} for 1,000 L of ${line.requested_product_name}, requested for delivery ${quote.requested_delivery_date}.`,
+    quote
+  );
 
   const compliance = checkCompliance(HOTEL_ESPOO_POLICY, quote.lines);
   const buyerPolicy: PolicyPanel = {
@@ -188,29 +195,32 @@ export async function scenario2TwoSidedApproval(client: AimoClient = buildClient
     };
   }
 
+  step(steps, "order", "complete", "Order submitted", `Quote ${quote.quote_id} committed to Aimo for the commercial guardrail check.`);
+
   let order = await client.placeOrder(quote.quote_id);
   const held = order.status === "held_for_approval";
   const aimoPolicy: PolicyPanel = {
     status: held ? "human_review" : "passed",
     reason: held ? (order.approval.reason ?? "Held for Aimo-side review.") : "Within credit limit and auto-approval ceiling."
   };
-  step(steps, "aimo_policy", aimoPolicy.status, "Aimo policy check", held ? "Requires Aimo-side human approval." : "Passed, auto-approved.");
+  step(steps, "aimo_policy", aimoPolicy.status, held ? "Aimo places order on hold" : "Aimo policy check", held ? "Human approval required." : "Passed, auto-approved.");
 
   let governanceCheck: GovernanceCheckResult | undefined;
   if (held) {
     try {
       await client.approveOrder(order.order_id, "human:buyer");
       governanceCheck = { attemptedBy: "human:buyer", rejected: false, httpStatus: 200, rawMessage: "Accepted (this would be a bug)." };
-      step(steps, "approval", "blocked", "Governance check failed", "ERROR: buyer-side approval was incorrectly accepted for an Aimo-owned hold.");
+      step(steps, "approval", "blocked", "Buyer-side approval attempted", "ERROR: incorrectly accepted for an Aimo-owned hold.");
     } catch (err) {
       const message = (err as Error).message;
       const statusMatch = message.match(/failed: (\d+)/);
       governanceCheck = { attemptedBy: "human:buyer", rejected: true, httpStatus: statusMatch ? Number(statusMatch[1]) : null, rawMessage: message };
-      step(steps, "approval", "info", "Approval ownership enforced", "Buyer-side approval rejected — cannot clear an Aimo-owned hold.");
+      step(steps, "approval", "info", "Buyer-side approval attempted", `${governanceCheck.httpStatus ?? "error"} — unauthorized. Buyer cannot clear an Aimo-owned hold.`);
     }
 
     order = await client.approveOrder(order.order_id, "human:aimo");
-    step(steps, "approval", "complete", "Aimo-side approval", "Authorized Aimo human cleared the hold.");
+    step(steps, "approval", "complete", "Aimo human approves", "Authorized.");
+    step(steps, "order", "complete", "Order confirmed", "Released.");
   }
 
   const audit = await withAudit(order, client, steps);
@@ -389,14 +399,14 @@ export async function scenario4PartialAvailability(client: AimoClient = buildCli
   }
 
   const readyLines = [milkLine, otherLine].filter((l) => l.status === "available");
-  const readyToOrderEur = Math.round(readyLines.reduce((sum, l) => sum + (l.line_total_eur ?? 0), 0) * 100) / 100;
+  const eligibleLineValueEur = Math.round(readyLines.reduce((sum, l) => sum + (l.line_total_eur ?? 0), 0) * 100) / 100;
 
   step(
     steps,
     "result",
     "complete",
-    "Per-line outcome",
-    `${milkLine.requested_product_name} is eligible to order now; ${otherLine.requested_product_name} needs a substitution decision — handled independently, not as one failed basket. This is a quote, not an order — nothing has been placed yet.`
+    "Per-line evaluation",
+    `${milkLine.requested_product_name} is eligible for ordering; ${otherLine.requested_product_name} requires a substitution decision — evaluated independently, not as one failed basket. This is a quote evaluation, not an order — nothing has been placed.`
   );
 
   return {
@@ -404,7 +414,7 @@ export async function scenario4PartialAvailability(client: AimoClient = buildCli
     name,
     tagline,
     outcome: "partial",
-    headline: `${readyLines.length} of 2 lines ready to order`,
+    headline: `${readyLines.length} / 2 lines currently eligible for ordering`,
     subheadline: `${milkLine.requested_product_name} — ${milkLine.status}; ${otherLine.requested_product_name} — ${otherLine.status}`,
     transactionId: quote.quote_id,
     transactionIdKind: "quote",
@@ -416,7 +426,7 @@ export async function scenario4PartialAvailability(client: AimoClient = buildCli
     order: null,
     audit: [],
     relevantLines: [milkLine, otherLine],
-    readyToOrderEur
+    eligibleLineValueEur
   };
 }
 

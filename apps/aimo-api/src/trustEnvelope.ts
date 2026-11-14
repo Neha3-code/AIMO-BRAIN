@@ -42,7 +42,7 @@ export function buildPriceAvailabilityEnvelope(
     claim: {
       product_id: productId,
       price: amount !== null ? { amount, currency: price?.catalogPrice?.currency ?? "EUR", unit: "sales_unit" } : null,
-      availability: { status, quantity }
+      availability: { status, quantity, confirmed_available_date: schedule?.availableDate ?? null }
     },
     provenance: {
       issuer: "Valio Aimo",

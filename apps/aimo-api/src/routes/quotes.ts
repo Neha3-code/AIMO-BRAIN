@@ -101,7 +101,8 @@ export function registerQuoteRoutes(app: FastifyInstance) {
             price_eur: unitPrice(p),
             availability: {
               status: isAvailable(a) ? ("in_stock" as const) : ("out_of_stock" as const),
-              quantity: schedule?.availableAmount ?? null
+              quantity: schedule?.availableAmount ?? null,
+              confirmed_available_date: schedule?.availableDate ?? null
             },
             delivery_lead_time_days: schedule?.availableDate
               ? Math.max(0, Math.round((new Date(schedule.availableDate).getTime() - Date.now()) / 86400000))

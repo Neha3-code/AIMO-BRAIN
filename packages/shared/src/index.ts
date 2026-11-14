@@ -26,6 +26,9 @@ export interface ProductPriceClaim {
   availability: {
     status: "in_stock" | "out_of_stock" | "unknown" | "terminal_supplier";
     quantity: number | null;
+    /** The date the upstream schedule actually confirms the goods for, which can differ
+     *  from the buyer's requested date — null if no schedule line was returned at all. */
+    confirmed_available_date: string | null;
   };
 }
 
