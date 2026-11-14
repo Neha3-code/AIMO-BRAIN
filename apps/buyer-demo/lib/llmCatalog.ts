@@ -119,7 +119,7 @@ const FINNISH_SEASONS = `Finnish foodservice seasonality guide:
 Jan: storage root vegetables, burbot, citrus. Feb: Runeberg tortes (5 Feb), Shrove buns (laskiaispulla), burbot. Mar-Apr: Easter (mämmi, lamb, pasha), rhubarb starts late Apr.
 May: Vappu (sima, munkki doughnuts), asparagus, first greens. Jun: new potatoes, Juhannus midsummer (grilling, herring, salmon), strawberries late Jun.
 Jul: berries (blueberry, strawberry), chanterelles, crayfish season opens 21 Jul. Aug: crayfish parties, mushrooms, new harvest vegetables. Sep: mushrooms, apples, lingonberries, game season starts.
-Oct: game (moose, reindeer), Baltic herring market, cabbage, pumpkin/Halloween. Nov: Father's Day (2nd Sunday), Pikkujoulu Christmas parties begin, game, root vegetables, glögi, gingerbread.
+Oct: game (moose, reindeer), Baltic herring market, cabbage, pumpkin/Halloween. Nov: Pikkujoulu Christmas parties begin, winter game menus, root vegetable harvest continues, early Christmas buffet planning, glögi, gingerbread.
 Dec: Independence Day (6 Dec), Christmas (ham, rosolli beetroot salad, lutefisk, casseroles, rice porridge, gingerbread, glögi), New Year.`;
 
 const KEYWORD_RULES = `Catalog search matches product NAMES only (English and Finnish), token by token.
@@ -282,6 +282,13 @@ export interface RecipeLine {
   /** The chosen product is out of stock and no in-stock alternative was available — a planning
    *  exception the buyer must resolve (e.g. find a substitute) before this line can be ordered. */
   needs_substitute: boolean;
+  /** Per-line reliability of the whole match + quantity calculation, for display: "good" = catalog
+   *  data pinned the quantity with no red flags; "estimated" = a reasonable AI guess (pack size or
+   *  order_units read off the name), not a verified calculation; "needs_review" = no confident
+   *  product, needs a substitute, or the computed quantity is a large (>30%) surplus/shortfall
+   *  against what's actually needed. A product match finding a real SKU never implies the quantity
+   *  on it is correct — this is the separate signal for that. */
+  match_status: "good" | "estimated" | "needs_review";
 }
 
 export interface RecipePlan {
@@ -289,6 +296,10 @@ export interface RecipePlan {
   covers: number;
   summary: string;
   lines: RecipeLine[];
+  /** Plain-language flags the buyer should read before evaluating the basket — out-of-stock lines,
+   *  unmatched ingredients, and quantity estimates that need a second look. Built from the same
+   *  per-line data as match_status/needs_substitute, not a separate AI pass. */
+  exceptions: string[];
 }
 
 /** "4.5 kg" / "800 g" / "3 l" / "2,5 dl" → kg (litres treated as ≈ kg). null for pcs, bunches, etc. */
@@ -303,6 +314,18 @@ function parseKg(q: string): number | null {
 
 function fmtKg(kg: number): string {
   return kg >= 1 ? `${+kg.toFixed(2)} kg` : `${Math.round(kg * 1000)} g`;
+}
+
+/** A name like "Glogg syrup 1+3 0,5L" states CONCENTRATE volume only — "1+3" means 1 part
+ *  concentrate diluted into 4 parts total. Returns the yield multiplier (4 for "1+3"), or 1 when
+ *  no ratio is present. Catches the exact bug a reviewer found: treating a 0.5 L concentrate
+ *  bottle as if it were 0.5 L of prepared drink undercounts how many bottles are needed by 4x. */
+function dilutionMultiplier(name: string): number {
+  const m = /\b(\d+)\s*\+\s*(\d+)\b/.exec(name);
+  if (!m) return 1;
+  const concentrateParts = Number(m[1]);
+  const totalParts = concentrateParts + Number(m[2]);
+  return concentrateParts > 0 ? totalParts / concentrateParts : 1;
 }
 
 export async function planRecipe(dish: string, covers: number): Promise<RecipePlan> {
@@ -335,7 +358,8 @@ Return JSON: {"summary": "<one sentence describing the dish as you interpreted i
 Match the ingredient as a chef means it: "cream" is dairy cream (not coconut or ice cream), "butter" is a block (not 10 g portions) — unless the dish explicitly asks otherwise.
 A candidate only matched by a shared keyword but is really a different kind of product (e.g. "BUTTER SPREADER" or "BUTTER KNIFE" for ingredient "butter", a seasoning mix for a raw ingredient) is NOT the ingredient — mark it confidence "weak" rather than dropping it silently, so the buyer sees it was considered and rejected. Only mark "good" when you're confident the product IS the ingredient.
 For each, compute order_units = how many sales units of that product cover quantity_needed, reading the pack size from the product name (round up; if the pack size is unclear, give your best estimate and say so in note).
-note: max 15 words — pack size reasoning or why nothing fit.
+If the product name states a dilution/concentrate ratio like "1+3" or "1:4" (common for glögi syrup, juice concentrate, sauce bases), its stated volume is CONCENTRATE only — the prepared yield is (sum of ratio parts ÷ concentrate parts) × stated volume. Compute order_units from that diluted yield, not the raw stated volume, and say so in note (e.g. "0.5 L × 4 (1+3 dilution) = 2 L prepared; 10 units cover 20 L").
+note: max 20 words — pack size (and dilution, if any) reasoning, or why nothing fit.
 Return JSON: {"lines": [{"index": <ingredient index>, "ranked": [{"id": "<id>", "order_units": <integer>, "note": "...", "confidence": "good|weak"}]}]}`
     },
     {
@@ -355,41 +379,74 @@ Return JSON: {"lines": [{"index": <ingredient index>, "ranked": [{"id": "<id>", 
   );
   const live = await resolveLive(rankedPerIngredient.flatMap((rs) => rs.map((r) => String(r.id))));
 
-  return {
-    dish,
-    covers,
-    summary: recipe.summary ?? "",
-    lines: ingredients.map((ing, i) => {
-      const ranked = rankedPerIngredient[i];
-      // Only a "good"-confidence pick counts as the ingredient; a "weak" match (keyword hit but
-      // wrong product) must never present as a confident recommendation.
-      const goodRanked = ranked.filter((r) => r.confidence !== "weak");
-      const bestId = preferAvailable(goodRanked.map((r) => String(r.id)), live, 1)[0] ?? goodRanked[0]?.id;
-      const best = goodRanked.find((r) => String(r.id) === bestId);
-      const product = bestId ? (live.get(String(bestId)) ?? null) : null;
-      const needKg = parseKg(ing.quantity_needed);
-      const unitKg = product?.net_weight_kg_per_sales_unit ?? null;
-      const computed = needKg !== null && unitKg ? Math.ceil(needKg / unitKg - 1e-9) : null;
-      const needsSubstitute = product?.envelope.claim.availability.status === "out_of_stock";
-      return {
-        ingredient: ing.ingredient,
-        role: ing.role === "core" ? "core" : "supporting",
-        quantity_needed: ing.quantity_needed,
-        order_units: Math.max(1, computed ?? Math.ceil(Number(best?.order_units) || 1)),
-        units_basis: computed !== null ? "catalog_weight" : "ai_estimate",
-        note:
-          computed !== null && unitKg
-            ? `Catalog weight ${fmtKg(unitKg)} per unit → ${computed} unit${computed === 1 ? "" : "s"} cover${computed === 1 ? "s" : ""} ${ing.quantity_needed}.`
-            : best
-              ? (best.note ?? "")
-              : ranked.length
-                ? `No sufficiently confident catalogue match for "${ing.ingredient}" — only keyword-similar products were found.`
-                : "No matching product in the catalog.",
-        product,
-        alternatives_considered: ing.candidates.length,
-        match_confidence: product ? "good" : "none",
-        needs_substitute: needsSubstitute
-      };
-    })
-  };
+  const lines: RecipeLine[] = ingredients.map((ing, i) => {
+    const ranked = rankedPerIngredient[i];
+    // Only a "good"-confidence pick counts as the ingredient; a "weak" match (keyword hit but
+    // wrong product) must never present as a confident recommendation.
+    const goodRanked = ranked.filter((r) => r.confidence !== "weak");
+    const bestId = preferAvailable(goodRanked.map((r) => String(r.id)), live, 1)[0] ?? goodRanked[0]?.id;
+    const best = goodRanked.find((r) => String(r.id) === bestId);
+    const product = bestId ? (live.get(String(bestId)) ?? null) : null;
+    const needKg = parseKg(ing.quantity_needed);
+    const unitKg = product?.net_weight_kg_per_sales_unit ?? null;
+    const dilution = product ? dilutionMultiplier(product.name) : 1;
+    const effectiveUnitKg = unitKg !== null ? unitKg * dilution : null;
+    const computed = needKg !== null && effectiveUnitKg ? Math.ceil(needKg / effectiveUnitKg - 1e-9) : null;
+    const needsSubstitute = product?.envelope.claim.availability.status === "out_of_stock";
+    const orderUnits = Math.max(1, computed ?? Math.ceil(Number(best?.order_units) || 1));
+
+    // Surplus/shortfall vs. what's actually needed, only computable on the catalog-weight path —
+    // a large gap (e.g. a 1 kg pack bought whole for a 0.5 kg need) is a real planning exception,
+    // not a clean match, even though a real SKU was found.
+    const coverageKg = computed !== null && effectiveUnitKg !== null ? orderUnits * effectiveUnitKg : null;
+    const surplusPct = coverageKg !== null && needKg !== null && needKg > 0 ? (coverageKg - needKg) / needKg : null;
+    // Buying in whole units always leaves some surplus — only flag it once it's a clear multiple
+    // over what's needed (e.g. ordering 2x+ the requirement), not routine pack-size rounding.
+    const largeSurplus = surplusPct !== null && surplusPct > 0.5;
+
+    const matchConfidence: "good" | "none" = product ? "good" : "none";
+    const unitsBasis: "catalog_weight" | "ai_estimate" = computed !== null ? "catalog_weight" : "ai_estimate";
+    const matchStatus: RecipeLine["match_status"] =
+      matchConfidence === "none" || needsSubstitute || largeSurplus ? "needs_review" : unitsBasis === "ai_estimate" ? "estimated" : "good";
+
+    const dilutionNote =
+      computed !== null && unitKg !== null && dilution !== 1
+        ? `${fmtKg(unitKg)} concentrate × ${dilution} (dilution) = ${fmtKg(effectiveUnitKg!)} prepared → ${computed} unit${computed === 1 ? "" : "s"} cover${computed === 1 ? "s" : ""} ${ing.quantity_needed}.`
+        : null;
+    const surplusNote = largeSurplus && coverageKg !== null ? ` Note: ${fmtKg(coverageKg)} ordered vs. ${ing.quantity_needed} needed — review for surplus.` : "";
+
+    const note =
+      dilutionNote ??
+      (computed !== null && unitKg
+        ? `Catalog weight ${fmtKg(unitKg)} per unit → ${computed} unit${computed === 1 ? "" : "s"} cover${computed === 1 ? "s" : ""} ${ing.quantity_needed}.`
+        : best
+          ? (best.note ?? "")
+          : ranked.length
+            ? `No sufficiently confident catalogue match for "${ing.ingredient}" — only keyword-similar products were found.`
+            : "No matching product in the catalog.") + surplusNote;
+
+    return {
+      ingredient: ing.ingredient,
+      role: ing.role === "core" ? "core" : "supporting",
+      quantity_needed: ing.quantity_needed,
+      order_units: orderUnits,
+      units_basis: unitsBasis,
+      note,
+      product,
+      alternatives_considered: ing.candidates.length,
+      match_confidence: matchConfidence,
+      needs_substitute: needsSubstitute,
+      match_status: matchStatus
+    };
+  });
+
+  const exceptions: string[] = [];
+  for (const l of lines) {
+    if (l.match_confidence === "none") exceptions.push(`${l.ingredient}: no confident catalogue match — pick a product manually.`);
+    else if (l.needs_substitute) exceptions.push(`${l.ingredient}: ${l.product!.name} is out of stock — find a substitute before ordering this line.`);
+    else if (l.match_status === "needs_review") exceptions.push(`${l.ingredient}: quantity needs review — ${l.note}`);
+    else if (l.match_status === "estimated") exceptions.push(`${l.ingredient}: pack size estimated from the product name — verify before ordering.`);
+  }
+
+  return { dish, covers, summary: recipe.summary ?? "", lines, exceptions };
 }

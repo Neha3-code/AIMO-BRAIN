@@ -4,7 +4,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { formatEur, type AlternativeReview, type Outcome, type ScenarioResult, type StepStatus } from "../lib/scenarios";
 import { HOTEL_ESPOO_POLICY, RELIABILITY_DISCLOSURE_CAVEAT, type CheckResult } from "../lib/policyEngine";
 import type { AuditEvent, ProductFacts, ProductLookupResult, QuoteLine, TrustEnvelope } from "@aimo/shared";
-import type { RecipePlan, SeasonalSuggestions, SeasonalTheme } from "../lib/llmCatalog";
+import type { RecipeLine, RecipePlan, SeasonalSuggestions, SeasonalTheme } from "../lib/llmCatalog";
 import type { Narration } from "../lib/llmExplain";
 
 const SCENARIO_CARDS = [
@@ -1178,6 +1178,21 @@ function AiBadge() {
   return <span className="ai-badge">✦ Aimo AI · Nemotron</span>;
 }
 
+const MATCH_STATUS_META: Record<RecipeLine["match_status"], { label: string; status: StepStatus; title: string }> = {
+  good: { label: "Good match", status: "passed", title: "Quantity calculated from the catalog's own net weight, with no flags." },
+  estimated: { label: "Estimated match", status: "pending", title: "A reasonable AI estimate of pack size or quantity — not a verified calculation. Worth a second look before ordering." },
+  needs_review: { label: "Needs review", status: "blocked", title: "No confident product match, an out-of-stock line, or a quantity estimate that looks off (e.g. a large surplus) — see the exceptions above." }
+};
+
+function MatchStatusPill({ status }: { status: RecipeLine["match_status"] }) {
+  const meta = MATCH_STATUS_META[status];
+  return (
+    <Pill status={meta.status} title={meta.title}>
+      {meta.label}
+    </Pill>
+  );
+}
+
 /** Proactive, suggest-only selling: seasonal themes grounded in real catalog SKUs with live price/stock.
  *  Each theme is a starting point for the order planner, not just a single-product pick. */
 function SeasonalSuggestionsCard({
@@ -1204,7 +1219,7 @@ function SeasonalSuggestionsCard({
     <div className="ai-panel">
       <div className="ai-panel-head">
         <AiBadge />
-        <span className="ai-panel-title">Seasonal inspiration from Aimo AI</span>
+        <span className="ai-panel-title">1. Seasonal inspiration</span>
       </div>
       {!data && !error && (
         <p className="mock-note">
@@ -1303,11 +1318,11 @@ function RecipePlanner({
         <span className="ai-panel-title">Plan an order</span>
       </div>
       <p className="ai-panel-lede">
-        Start with a dish, menu or seasonal occasion. Aimo AI suggests ingredients and finds matching products in the real,
-        17,546-SKU catalog, sized to your covers.
+        Aimo AI translates your menu into ingredient requirements, finds candidate products in the 17,546-SKU Junction26
+        catalogue and calculates a proposed basket for your covers. You can review every match before purchasing.
       </p>
       <div className="section-title" style={{ margin: "4px 0 10px" }}>
-        Or create your own menu
+        2. Describe your own menu
       </div>
       <div className="explorer-chips">
         {RECIPE_EXAMPLES.map((ex) => (
@@ -1346,15 +1361,29 @@ function RecipePlanner({
       {error && <p className="mock-note explorer-error">{error}</p>}
       {plan && (
         <>
+          <div className="section-title" style={{ margin: "18px 0 10px" }}>
+            3. Review the proposed basket
+          </div>
           <p className="ai-panel-lede">
             <strong>{plan.covers} covers:</strong> {plan.summary}
           </p>
+          {plan.exceptions.length > 0 && (
+            <div className="recipe-exceptions">
+              <div className="recipe-exceptions-title">Before evaluating this basket</div>
+              <ul>
+                {plan.exceptions.map((ex, i) => (
+                  <li key={i}>{ex}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="recipe-table-wrap">
             <table className="recipe-table">
               <thead>
                 <tr>
                   <th>Ingredient</th>
                   <th>Catalog product</th>
+                  <th>Match</th>
                   <th>Units</th>
                   <th>Line est.</th>
                   <th />
@@ -1395,6 +1424,9 @@ function RecipePlanner({
                         </div>
                       )}
                     </td>
+                    <td>
+                      <MatchStatusPill status={l.match_status} />
+                    </td>
                     <td>{l.product ? l.order_units : "—"}</td>
                     <td>{l.product?.envelope.claim.price ? formatEur(l.product.envelope.claim.price.amount * l.order_units) : "—"}</td>
                     <td>
@@ -1415,9 +1447,9 @@ function RecipePlanner({
             </table>
           </div>
           <p className="mock-note" style={{ marginTop: 10 }}>
-            Estimated basket {formatEur(estTotal)} across {priced.length} priced line{priced.length === 1 ? "" : "s"} — list prices, not a quote.
-            📏 = units computed from the catalog's net weight; ≈ = AI estimate from the pack size in the name. Each line still goes through
-            the binding quote, allergen, carbon and approval checks when you evaluate it.
+            Estimated basket {formatEur(estTotal)} across {priced.length} priced line{priced.length === 1 ? "" : "s"} — list prices, not a
+            quote. AI-generated proposal, no order has been placed. 4. Evaluate and purchase: each line still goes through the same
+            binding quote → buyer policy → supplier policy → order checks as a manually picked product when you evaluate it.
           </p>
         </>
       )}
