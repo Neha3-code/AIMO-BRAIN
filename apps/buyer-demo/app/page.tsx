@@ -347,6 +347,106 @@ function PolicyPanels({ result }: { result: ScenarioResult }) {
   );
 }
 
+/** The known seeded Aimo-side limits for this demo's buyer (k-hotel-espoo), per
+ *  apps/aimo-api/scripts/seed.ts — mirrors the Rules-in-effect panel above. The buyer app has no
+ *  way to read these from aimo-api directly (that's the whole point of the separation); shown here
+ *  only so the checklist below can compare the order total against the real configured thresholds. */
+const AIMO_CREDIT_LIMIT_EUR = 5000;
+const AIMO_AUTO_APPROVE_EUR = 2000;
+
+type RuleRowStatus = "pass" | "review" | "fail" | null;
+
+function RuleRow({ label, rule, actual, status }: { label: string; rule: string; actual: string; status: RuleRowStatus }) {
+  const pillStatus: StepStatus = status === "pass" ? "passed" : status === "fail" ? "blocked" : status === "review" ? "pending" : "info";
+  const pillLabel = status === "pass" ? "pass" : status === "fail" ? "fail" : status === "review" ? "needs approval" : "n/a";
+  return (
+    <div className="rule-row">
+      <Pill status={pillStatus}>{pillLabel}</Pill>
+      <div>
+        <div className="rule-label">{label}</div>
+        <div className="rule-detail">Rule: {rule}</div>
+        <div className="rule-detail">Actual: {actual}</div>
+      </div>
+    </div>
+  );
+}
+
+/** Turns the one-sentence policy summaries into the individual rules actually evaluated — the
+ *  specific threshold from each side's own policy config, against the actual value for this order.
+ *  A policy result saying "passed" or "blocked" is an assertion; this is where it's shown. */
+function RuleChecklist({ result }: { result: ScenarioResult }) {
+  const line = result.relevantLines?.[0] ?? result.quote?.lines[0] ?? null;
+  const bannedHits = line ? bannedAllergenHits(line.allergens ?? []) : [];
+  const d = result.deliveryDateDecision;
+  const rel = result.sustainability?.reliability;
+  const totalEur = result.quote?.total_eur ?? null;
+
+  const buyerRows: { label: string; rule: string; actual: string; status: RuleRowStatus }[] = [
+    {
+      label: "Banned allergens",
+      rule: `Must not contain code${HOTEL_ESPOO_POLICY.bannedAllergenCodes.length > 1 ? "s" : ""} ${HOTEL_ESPOO_POLICY.bannedAllergenCodes.join(", ")}`,
+      actual: !line ? "Not checked" : bannedHits.length > 0 ? `Contains ${bannedHits.join(", ")}` : "None present",
+      status: !line ? null : bannedHits.length > 0 ? "fail" : "pass"
+    }
+  ];
+  if (d) {
+    buyerRows.push({
+      label: "Delivery date",
+      rule: `Confirmed date within ${HOTEL_ESPOO_POLICY.maxDeliveryDeviationDays} day${HOTEL_ESPOO_POLICY.maxDeliveryDeviationDays === 1 ? "" : "s"} of the ${d.requestedDate} request`,
+      actual: d.confirmedDate ? `Confirmed ${d.confirmedDate}` : "Not confirmed",
+      status: d.allowed ? "pass" : "fail"
+    });
+  }
+  if (rel) {
+    buyerRows.push({
+      label: "Delivery reliability",
+      rule: `At least ${Math.round(HOTEL_ESPOO_POLICY.minDeliveryReliability * 100)}% for an AI-picked substitute`,
+      actual: rel.value !== null ? fmtPct(rel.value) : "No delivery history available",
+      status: rel.status === "pass" ? "pass" : rel.status === "fail" ? "fail" : null
+    });
+  }
+
+  const aimoRows: { label: string; rule: string; actual: string; status: RuleRowStatus }[] = [];
+  if (result.aimoPolicy) {
+    // Both thresholds only ever route to a human — Aimo's guardrail never hard-rejects on either
+    // one by itself (see apps/aimo-api/src/guardrail.ts: both branches set requiresApproval, never
+    // a rejection). A real decline only happens if the human reviewer then declines it.
+    aimoRows.push({
+      label: "Credit limit",
+      rule: `Order total ≤ ${formatEur(AIMO_CREDIT_LIMIT_EUR)}, else held for a human`,
+      actual: totalEur !== null ? formatEur(totalEur) : "—",
+      status: totalEur === null ? null : totalEur <= AIMO_CREDIT_LIMIT_EUR ? "pass" : "review"
+    });
+    aimoRows.push({
+      label: "Auto-approve ceiling",
+      rule: `Order total ≤ ${formatEur(AIMO_AUTO_APPROVE_EUR)} to release without a human`,
+      actual: totalEur !== null ? formatEur(totalEur) : "—",
+      status: totalEur === null ? null : totalEur <= AIMO_AUTO_APPROVE_EUR ? "pass" : "review"
+    });
+  }
+
+  if (buyerRows.length === 0 && aimoRows.length === 0) return null;
+
+  return (
+    <div className="policy-grid">
+      <div className="detail-card rule-checklist-card">
+        <h4>Buyer rules checked</h4>
+        {buyerRows.map((r, i) => (
+          <RuleRow key={i} {...r} />
+        ))}
+      </div>
+      {aimoRows.length > 0 && (
+        <div className="detail-card rule-checklist-card">
+          <h4>Supplier rules checked</h4>
+          {aimoRows.map((r, i) => (
+            <RuleRow key={i} {...r} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DeliveryDateCard({ result }: { result: ScenarioResult }) {
   const d = result.deliveryDateDecision;
   if (!d) return null;
@@ -1058,6 +1158,7 @@ function TransactionWorkspace({ result }: { result: ScenarioResult }) {
       <AiNarration result={result} />
       <ApprovalSequence result={result} />
       <PolicyPanels result={result} />
+      <RuleChecklist result={result} />
       <DeliveryDateCard result={result} />
       <SustainabilityCard result={result} />
       <CategorySuggestions result={result} />
@@ -1929,6 +2030,44 @@ export default function Page() {
             places an order. Every product it suggests still runs through the same buyer-policy and supplier-policy checks as a
             manually picked one, unchanged.
           </p>
+          <div className="rules-panel">
+            <div className="section-title" style={{ margin: "0 0 10px" }}>
+              Rules in effect for this demo
+            </div>
+            <p className="explorer-lede" style={{ marginBottom: 14 }}>
+              Not a description of the rules — the actual configured values, read from each side&apos;s own code. Neither side
+              can see the other&apos;s.
+            </p>
+            <div className="policy-grid">
+              <div className="policy-card policy-card-buyer">
+                <div className="policy-owner">Buyer-owned — Hotel Espoo&apos;s kitchen policy</div>
+                <ul className="rules-list">
+                  <li>
+                    Banned allergen code: <code>{HOTEL_ESPOO_POLICY.bannedAllergenCodes.join(", ")}</code> (tree nuts)
+                  </li>
+                  <li>Max delivery deviation: {HOTEL_ESPOO_POLICY.maxDeliveryDeviationDays} day late</li>
+                  <li>Min delivery reliability for an AI-picked substitute: {Math.round(HOTEL_ESPOO_POLICY.minDeliveryReliability * 100)}%</li>
+                  <li>Max carbon increase for a substitute: {HOTEL_ESPOO_POLICY.maxSubstituteCarbonIncreasePct}% over the original</li>
+                  <li>Local budget cap: {HOTEL_ESPOO_POLICY.maxBudgetEur === null ? "none set — defers to Aimo's own credit check" : formatEur(HOTEL_ESPOO_POLICY.maxBudgetEur)}</li>
+                </ul>
+                <p className="mock-note" style={{ marginTop: 8 }}>
+                  Defined in <code>apps/buyer-demo/lib/policyEngine.ts</code> — runs entirely inside the buyer app.
+                </p>
+              </div>
+              <div className="policy-card policy-card-aimo">
+                <div className="policy-owner">Supplier-owned — Aimo&apos;s commercial rules for this buyer</div>
+                <ul className="rules-list">
+                  <li>Credit limit: {formatEur(5000)}</li>
+                  <li>Auto-approve ceiling: {formatEur(2000)} — orders above this still need a human, even within the credit limit</li>
+                  <li>No visibility into the buyer&apos;s allergens, recipe rules or carbon limits</li>
+                </ul>
+                <p className="mock-note" style={{ marginTop: 8 }}>
+                  Enforced in <code>apps/aimo-api/src/guardrail.ts</code> against this demo buyer&apos;s seeded limits — a separate
+                  service, over HTTP, never imported by the buyer app.
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 

@@ -1076,6 +1076,29 @@ h3,
   }
 }
 
+.rules-panel {
+  margin-top: 36px;
+}
+
+.rules-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.rules-list li {
+  margin-bottom: 4px;
+}
+
+.rules-list code {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
 /* ---- detail cards ---- */
 
 .detail-card {
@@ -1091,6 +1114,35 @@ h3,
   color: var(--petrol);
   line-height: 1.15;
   margin: 0 0 14px;
+}
+
+.rule-checklist-card {
+  background: var(--white);
+  border: 1px solid var(--border);
+}
+
+.rule-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--border-strong);
+}
+
+.rule-row:last-child {
+  border-bottom: none;
+}
+
+.rule-label {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.rule-detail {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 .kv-row {
