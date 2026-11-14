@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { ScenarioResult, ScenarioStep, StepStatus } from "../lib/scenarios";
-import type { AuditEvent, Order, Quote, QuoteLine } from "@aimo/shared";
+import type { AlternativeReview, Outcome, ScenarioResult, ScenarioStep, StepStatus } from "../lib/scenarios";
+import type { AuditEvent } from "@aimo/shared";
 
 const SCENARIO_CARDS = [
   {
@@ -31,15 +31,61 @@ const SCENARIO_CARDS = [
 const STAGE_LABEL: Record<string, string> = {
   request: "Buyer request",
   quote: "Product search and quote",
-  buyer_policy: "Buyer policy check",
-  aimo_policy: "Aimo policy check",
+  buyer_policy: "Buyer policy",
+  aimo_policy: "Aimo policy",
   approval: "Approval",
   audit: "Audit",
-  result: "Order release"
+  result: "Outcome"
 };
+
+const OUTCOME_META: Record<Outcome, { label: string; tone: "good" | "warn" | "neutral" }> = {
+  confirmed_auto: { label: "Order confirmed", tone: "good" },
+  confirmed_after_approval: { label: "Order confirmed", tone: "good" },
+  held: { label: "Held for approval", tone: "warn" },
+  no_viable_alternative: { label: "No suitable alternative", tone: "neutral" },
+  blocked: { label: "Order not placed", tone: "warn" }
+};
+
+function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  return (
+    d.toLocaleString(undefined, {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "UTC"
+    }) + " UTC"
+  );
+}
+
+function quantityUnitFor(productId: string): string {
+  // Scoped, honest display label — not a general unit-code translation system.
+  // This specific product is sold in 1 L sales units; we know that from its own
+  // product name, not from a generic code table (raw sales-unit codes like
+  // "ST"/"KI" aren't translated anywhere in the challenge dataset).
+  return productId === "464073" ? "L" : "units";
+}
 
 function Pill({ status, children }: { status: StepStatus; children: React.ReactNode }) {
   return <span className={`pill pill-${status}`}>{children}</span>;
+}
+
+function Hero({ result }: { result: ScenarioResult }) {
+  const meta = OUTCOME_META[result.outcome];
+  return (
+    <div className={`hero hero-${meta.tone}`}>
+      <div className="hero-top">
+        <span className={`hero-label hero-label-${meta.tone}`}>{meta.label}</span>
+        <span className="scenario-index">{result.name}</span>
+      </div>
+      <div className="hero-headline">{result.headline}</div>
+      <div className="hero-sub">{result.subheadline}</div>
+      <div className="hero-ref">
+        {result.transactionIdKind === "order" ? "Order reference" : "Quote reference"}: <code>{result.transactionId}</code>
+      </div>
+    </div>
+  );
 }
 
 function Timeline({ steps }: { steps: ScenarioStep[] }) {
@@ -59,92 +105,161 @@ function Timeline({ steps }: { steps: ScenarioStep[] }) {
   );
 }
 
-function QuoteCard({ quote }: { quote: Quote }) {
+function PolicyPanels({ result }: { result: ScenarioResult }) {
+  if (!result.buyerPolicy && !result.aimoPolicy) return null;
   return (
-    <div className="detail-card">
-      <h4>Quote {quote.quote_id}</h4>
-      {quote.lines.map((line: QuoteLine, i: number) => (
-        <div key={i}>
-          <div className="kv-row">
-            <span className="k">Product</span>
-            <span className="v">{line.requested_product_id}</span>
-          </div>
-          <div className="kv-row">
-            <span className="k">Quantity</span>
-            <span className="v">{line.requested_qty}</span>
-          </div>
-          <div className="kv-row">
-            <span className="k">Status</span>
-            <span className="v">{line.status}</span>
-          </div>
-          {line.status === "available" && (
-            <>
-              <div className="kv-row">
-                <span className="k">Unit price</span>
-                <span className="v">{line.unit_price_eur !== null ? `€${line.unit_price_eur.toFixed(2)}` : "—"}</span>
-              </div>
-              <div className="kv-row">
-                <span className="k">Line total</span>
-                <span className="v">{line.line_total_eur !== null ? `€${line.line_total_eur.toFixed(2)}` : "—"}</span>
-              </div>
-            </>
-          )}
-          {line.alternatives.length > 0 && (
-            <div className="alt-list">
-              {line.alternatives.map((alt) => (
-                <div className="alt-row" key={alt.product_id}>
-                  <span>
-                    #{alt.rank} {alt.name} ({alt.product_id})
-                  </span>
-                  <span>{alt.price_eur !== null ? `€${alt.price_eur.toFixed(2)}` : "—"}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          <details className="raw">
-            <summary>Trust envelope (source, timestamp, validity, verification)</summary>
-            <pre>{JSON.stringify(line.envelope, null, 2)}</pre>
-          </details>
-        </div>
-      ))}
-      <div className="kv-row" style={{ marginTop: 8, fontWeight: 700 }}>
-        <span className="k">Quote total</span>
-        <span className="v">€{quote.total_eur.toFixed(2)}</span>
+    <div className="policy-grid">
+      <div className="policy-card">
+        <div className="policy-owner">Buyer policy — buyer-side decision</div>
+        {result.buyerPolicy ? <Pill status={result.buyerPolicy.status}>{result.buyerPolicy.status.replace(/_/g, " ")}</Pill> : <Pill status="info">not evaluated</Pill>}
+        <div className="policy-reason">{result.buyerPolicy?.reason ?? "No buyer-side check ran for this path."}</div>
       </div>
-      <div className="kv-row">
-        <span className="k">Expires</span>
-        <span className="v">{new Date(quote.expires_at).toLocaleString()}</span>
+      <div className="policy-card">
+        <div className="policy-owner">Aimo policy — supplier-side decision</div>
+        {result.aimoPolicy ? <Pill status={result.aimoPolicy.status}>{result.aimoPolicy.status.replace(/_/g, " ")}</Pill> : <Pill status="info">no opinion</Pill>}
+        <div className="policy-reason">{result.aimoPolicy?.reason ?? "Aimo's guardrail has no opinion on buyer-side allergen/budget rules."}</div>
       </div>
     </div>
   );
 }
 
-function ApprovalCard({ order }: { order: Order }) {
+function QuoteDetail({ result }: { result: ScenarioResult }) {
+  if (!result.quote) return null;
+  // Scenario 3 renders a dedicated alternatives table instead — its quote
+  // carries several unrelated probe lines, not one meaningful line to show here.
+  if (result.id === "3") return null;
+  const line = result.quote.lines[0];
+  const unit = quantityUnitFor(line.requested_product_id);
   return (
     <div className="detail-card">
-      <h4>Order {order.order_id}</h4>
+      <h4>Quote detail</h4>
       <div className="kv-row">
-        <span className="k">Status</span>
-        <span className="v">{order.status}</span>
+        <span className="k">Product</span>
+        <span className="v">{line.requested_product_name}</span>
       </div>
       <div className="kv-row">
-        <span className="k">Approval owner</span>
-        <span className="v">{order.approval.owner ?? "—"}</span>
+        <span className="k">Quantity</span>
+        <span className="v">
+          {line.requested_qty.toLocaleString()} {unit}
+        </span>
       </div>
-      {order.approval.reason && (
+      {line.unit_price_eur !== null && (
         <div className="kv-row">
-          <span className="k">Reason</span>
-          <span className="v">{order.approval.reason}</span>
+          <span className="k">Unit price</span>
+          <span className="v">
+            €{line.unit_price_eur.toFixed(2)} / {unit}
+          </span>
+        </div>
+      )}
+      {line.line_total_eur !== null && (
+        <div className="kv-row">
+          <span className="k">Line total</span>
+          <span className="v">€{line.line_total_eur.toFixed(2)}</span>
         </div>
       )}
       <div className="kv-row">
+        <span className="k">Quote expires</span>
+        <span className="v">{formatDateTime(result.quote.expires_at)}</span>
+      </div>
+      <details className="raw">
+        <summary>Trust envelope (source, timestamp, validity, verification)</summary>
+        <p className="mock-note">
+          <code>mock_verified</code>: this claim is live from Valio Aimo's real challenge sandbox backend, but carries no cryptographic
+          signature — an honest label, not a production verification standard.
+        </p>
+        <pre>{JSON.stringify(line.envelope, null, 2)}</pre>
+      </details>
+    </div>
+  );
+}
+
+function AlternativesTable({ result }: { result: ScenarioResult }) {
+  if (!result.alternatives || !result.requestedProduct) return null;
+  return (
+    <div className="detail-card">
+      <h4>Requested vs. disclosed alternatives</h4>
+      <div className="kv-row">
+        <span className="k">Requested, unavailable</span>
+        <span className="v">
+          {result.requestedProduct.name} ({result.requestedProduct.id})
+        </span>
+      </div>
+      <table className="alt-table">
+        <thead>
+          <tr>
+            <th>Alternative</th>
+            <th>Price</th>
+            <th>Availability</th>
+            <th>Allergen codes</th>
+            <th>Buyer decision</th>
+          </tr>
+        </thead>
+        <tbody>
+          {result.alternatives.map((alt: AlternativeReview) => (
+            <tr key={alt.product_id} className={alt.buyerDecision === "rejected" ? "alt-row-rejected" : "alt-row-eligible"}>
+              <td>
+                #{alt.rank} {alt.name}
+                <div className="alt-sku">{alt.product_id}</div>
+              </td>
+              <td>{alt.price_eur !== null ? `€${alt.price_eur.toFixed(2)}` : "—"}</td>
+              <td>{alt.availability_status.replace(/_/g, " ")}</td>
+              <td>{alt.allergens.length > 0 ? alt.allergens.map((a) => a.code).join(", ") : "none disclosed"}</td>
+              <td>
+                <Pill status={alt.buyerDecision === "rejected" ? "rejected" : "passed"}>{alt.buyerDecision}</Pill>
+                <div className="alt-reason">{alt.buyerReason}</div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ApprovalDetail({ result }: { result: ScenarioResult }) {
+  const order = result.order;
+  if (!order || !order.approval.required) return null;
+  return (
+    <div className="detail-card">
+      <h4>Approval</h4>
+      <div className="kv-row">
+        <span className="k">Owner</span>
+        <span className="v">{order.approval.owner}</span>
+      </div>
+      <div className="kv-row">
+        <span className="k">Reason</span>
+        <span className="v">{order.approval.reason}</span>
+      </div>
+      <div className="kv-row">
         <span className="k">Requested amount</span>
-        <span className="v">{order.approval.requested_amount_eur !== null ? `€${order.approval.requested_amount_eur.toFixed(2)}` : "—"}</span>
+        <span className="v">€{order.approval.requested_amount_eur?.toFixed(2)}</span>
       </div>
       <div className="kv-row">
         <span className="k">Approved amount</span>
-        <span className="v">{order.approval.approved_amount_eur !== null ? `€${order.approval.approved_amount_eur.toFixed(2)}` : "—"}</span>
+        <span className="v">{order.approval.approved_amount_eur !== null ? `€${order.approval.approved_amount_eur.toFixed(2)}` : "pending"}</span>
       </div>
+    </div>
+  );
+}
+
+function GovernanceCheckCard({ result }: { result: ScenarioResult }) {
+  const check = result.governanceCheck;
+  if (!check) return null;
+  return (
+    <div className="detail-card">
+      <h4>Approval ownership enforced</h4>
+      <div className="gov-row gov-bad">
+        <span>Buyer approval rejected — cannot clear an Aimo-owned hold</span>
+        <Pill status="blocked">{check.httpStatus ?? "error"}</Pill>
+      </div>
+      <div className="gov-row gov-good">
+        <span>Aimo approval accepted — authorized Aimo human cleared the hold</span>
+        <Pill status="complete">approved</Pill>
+      </div>
+      <details className="raw">
+        <summary>Technical detail: raw API response</summary>
+        <pre>{check.rawMessage}</pre>
+      </details>
     </div>
   );
 }
@@ -159,7 +274,7 @@ function AuditList({ events }: { events: AuditEvent[] }) {
           <div className="audit-item" key={i}>
             <div className="audit-top">
               <span className="audit-actor">{e.actor}</span>
-              <span className="audit-time">{new Date(e.timestamp).toLocaleTimeString()}</span>
+              <span className="audit-time">{formatDateTime(e.timestamp)}</span>
             </div>
             <div>{e.action.replace(/_/g, " ")}</div>
             {e.reasons.length > 0 && <div className="audit-reasons">{e.reasons.join(" ")}</div>}
@@ -173,33 +288,13 @@ function AuditList({ events }: { events: AuditEvent[] }) {
 function TransactionWorkspace({ result }: { result: ScenarioResult }) {
   return (
     <div className="workspace">
-      <div className="workspace-header">
-        <div>
-          <h2>{result.name}</h2>
-          {result.transactionId && <div className="txn-id">Transaction {result.transactionId}</div>}
-        </div>
-        <Pill status={result.ok ? "complete" : "blocked"}>{result.ok ? "Resolved" : "Blocked"}</Pill>
-      </div>
-
+      <Hero result={result} />
       <Timeline steps={result.steps} />
-
-      {(result.buyerPolicy || result.aimoPolicy) && (
-        <div className="policy-grid">
-          <div className="policy-card">
-            <div className="policy-owner">Buyer policy — buyer-side decision</div>
-            {result.buyerPolicy ? <Pill status={result.buyerPolicy.status}>{result.buyerPolicy.status.replace(/_/g, " ")}</Pill> : <Pill status="info">not evaluated</Pill>}
-            <div className="policy-reason">{result.buyerPolicy?.reason ?? "No buyer-side check ran for this path."}</div>
-          </div>
-          <div className="policy-card">
-            <div className="policy-owner">Aimo policy — supplier-side decision</div>
-            {result.aimoPolicy ? <Pill status={result.aimoPolicy.status}>{result.aimoPolicy.status.replace(/_/g, " ")}</Pill> : <Pill status="info">no opinion</Pill>}
-            <div className="policy-reason">{result.aimoPolicy?.reason ?? "Aimo's guardrail has no opinion on buyer-side allergen/budget rules."}</div>
-          </div>
-        </div>
-      )}
-
-      {result.quote && <QuoteCard quote={result.quote} />}
-      {result.order && <ApprovalCard order={result.order} />}
+      <PolicyPanels result={result} />
+      <QuoteDetail result={result} />
+      <AlternativesTable result={result} />
+      <GovernanceCheckCard result={result} />
+      <ApprovalDetail result={result} />
       <AuditList events={result.audit} />
     </div>
   );
@@ -227,31 +322,29 @@ export default function Page() {
   return (
     <div className="wrap">
       <div className="eyebrow">
-        <span className="brand">AIMO BRAIN — TRUSTED TRADE AGENTS</span>
         <span className="badge-sandbox">CHALLENGE SANDBOX</span>
       </div>
-      <h1>Procurement control room</h1>
-      <p className="lede">
-        Watch a buyer agent source, evaluate, approve and order products through the Aimo trusted interface — two independent policy
-        layers, explicit human approval, and an auditable result for every transaction.
-      </p>
-      <div className="problem">
-        <strong>The problem:</strong> how can an autonomous buyer agent purchase from a supplier safely, without either side controlling
-        the other's policies? Price and stock below are live from Valio Aimo's real Junction26 challenge backend; every claim carries a{" "}
-        <code>mock_verified</code> trust envelope, never presented as a production feed.
-      </div>
+      <h1>AIMO BRAIN</h1>
+      <div className="tagline">Trusted trade agents</div>
+      <p className="lede">Autonomous procurement, with independent controls on both sides.</p>
 
       <div className="flow">
         <span className="flow-step">Buyer agent</span>
         <span className="flow-arrow">→</span>
         <span className="flow-step">Aimo API</span>
         <span className="flow-arrow">→</span>
-        <span className="flow-step">Supplier policy</span>
+        <span className="flow-step">Policy</span>
         <span className="flow-arrow">→</span>
         <span className="flow-step">Order</span>
         <span className="flow-arrow">→</span>
-        <span className="flow-step">Audit trail</span>
+        <span className="flow-step">Audit</span>
       </div>
+
+      <p className="problem">
+        <strong>The problem:</strong> how can an autonomous buyer agent purchase from a supplier safely, without either side controlling
+        the other's policies? Price and stock below are live from Valio Aimo's real Junction26 challenge backend; every claim carries a{" "}
+        <code>mock_verified</code> trust envelope, never presented as a production feed.
+      </p>
 
       <div className="role-grid">
         <div className="role-card">

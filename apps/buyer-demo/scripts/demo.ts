@@ -4,11 +4,12 @@ import { runAllScenarios } from "../lib/scenarios";
 async function main() {
   const results = await runAllScenarios();
   for (const result of results) {
-    console.log(`\n=== ${result.name} ===`);
+    console.log(`\n=== ${result.name} — ${result.headline} ===`);
+    console.log(result.subheadline);
     for (const step of result.steps) {
       console.log(`[${step.stage}/${step.status}] ${step.title}: ${step.detail}`);
     }
-    console.log(`Result: ${result.ok ? "OK" : "FAILED"}`);
+    console.log(`Outcome: ${result.outcome} (${result.ok ? "OK" : "FAILED"})`);
   }
 
   const failed = results.filter((r) => !r.ok);

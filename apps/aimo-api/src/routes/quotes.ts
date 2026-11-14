@@ -63,6 +63,7 @@ export function registerQuoteRoutes(app: FastifyInstance) {
         const price = unitPrice(priceById.get(line.product_id));
         quoteLines.push({
           requested_product_id: line.product_id,
+          requested_product_name: catalogProduct?.name_en ?? line.product_id,
           requested_qty: line.qty,
           status: "available",
           unit_price_eur: price,
@@ -115,6 +116,7 @@ export function registerQuoteRoutes(app: FastifyInstance) {
 
       quoteLines.push({
         requested_product_id: line.product_id,
+        requested_product_name: catalogProduct?.name_en ?? line.product_id,
         requested_qty: line.qty,
         status: "unavailable",
         unit_price_eur: null,

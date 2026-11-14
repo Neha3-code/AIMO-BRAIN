@@ -64,6 +64,7 @@ export interface QuoteAlternative {
 
 export interface QuoteLine {
   requested_product_id: string;
+  requested_product_name: string;
   requested_qty: number;
   status: QuoteLineStatus;
   unit_price_eur: number | null;
