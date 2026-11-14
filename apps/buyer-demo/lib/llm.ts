@@ -5,13 +5,29 @@
  * the LLM proposes still goes through aimo-api's quote and policyEngine's checks unchanged.
  */
 
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+
 const BASE_URL = process.env.VERDA_BASE_URL ?? "https://containers.datacrunch.io/nemotron-3-5-super-vl-b300/v1";
 const MODEL = process.env.VERDA_MODEL ?? "nemotron-3.5-super-vl";
 
 export const LLM_LABEL = "NVIDIA Nemotron 3.5 Super VL (Verda)";
 
+/** Key from VERDA_INFERENCE_KEY (e.g. on Vercel), else read from the file named by
+ *  VERDA_INFERENCE_KEY_FILE (local dev, e.g. ~/.config/verda/inference-key — shared with opencode). */
+function inferenceKey(): string | null {
+  if (process.env.VERDA_INFERENCE_KEY) return process.env.VERDA_INFERENCE_KEY.trim();
+  const file = process.env.VERDA_INFERENCE_KEY_FILE;
+  if (!file) return null;
+  try {
+    return readFileSync(file.replace(/^~(?=\/)/, homedir()), "utf-8").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 export function llmConfigured(): boolean {
-  return Boolean(process.env.VERDA_INFERENCE_KEY);
+  return inferenceKey() !== null;
 }
 
 export interface ChatMessage {
@@ -25,8 +41,8 @@ export async function chatJSON<T>(
   messages: ChatMessage[],
   opts: { maxTokens?: number; temperature?: number; thinking?: boolean; timeoutMs?: number } = {}
 ): Promise<T> {
-  const key = process.env.VERDA_INFERENCE_KEY;
-  if (!key) throw new Error("VERDA_INFERENCE_KEY is not set");
+  const key = inferenceKey();
+  if (!key) throw new Error("No Verda key: set VERDA_INFERENCE_KEY or VERDA_INFERENCE_KEY_FILE");
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 45_000);
