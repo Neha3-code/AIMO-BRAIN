@@ -12,7 +12,10 @@ challenge. Two independent sides talking over HTTP:
   target: **Vercel/Netlify**.
 - **`packages/shared`** — the TypeScript contract (trust envelope, quote,
   order, audit event) both sides import.
-- **Database**: **Neon** Postgres, used by `aimo-api` only.
+- **Database**: **Neon** Postgres, used by `aimo-api` only, over Neon's HTTP
+  driver (`@neondatabase/serverless`) rather than a raw TCP pool — one HTTPS
+  request per query, no connection pooling to manage, and it works from any
+  sandboxed/serverless network that only allows outbound HTTPS.
 
 ## Real upstream data, not invented data
 
@@ -109,6 +112,26 @@ npm run demo
   `AIMO_UPSTREAM_API_KEY`, `AIMO_BUYER_API_KEYS`.
 - **Vercel/Netlify**: deploy `apps/buyer-demo` as a Next.js app. Env vars:
   `AIMO_API_BASE_URL` (the Railway URL), `AIMO_API_KEY`, `BUYER_ID`.
+
+## Verified end-to-end
+
+Migrated and seeded a real Neon database (17,546 products from the real
+dataset) and ran all 3 scenarios against the running `aimo-api` dev server,
+hitting the real `junction26.valioaimo.fi` upstream for every price/
+availability check:
+
+- Scenario 1: milk quote €1,860, within credit limit and auto-approve
+  ceiling → order confirmed directly.
+- Scenario 2: milk quote €8,407.20, exceeds the €5,000 credit limit → held
+  with `approval.owner: "aimo"`; a buyer-side approval attempt is correctly
+  rejected with 403; the Aimo-side approval clears it to `confirmed`.
+- Scenario 3: a real out-of-stock SKU (wheat bread, 468928) returns its one
+  real substitute (wheat bun, 468995) disclosing allergen code `AW`; the
+  buyer's own policy bans `AW` and rejects it, reporting there's no
+  compliant option rather than silently picking it.
+
+Also confirmed the same flow through `apps/buyer-demo`'s Next.js API route
+(`/api/run-scenario`), i.e. the path the web UI uses.
 
 ## Demo script
 

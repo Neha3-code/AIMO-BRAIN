@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { pool } from "../src/db.js";
+import { query } from "../src/db.js";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS products (
@@ -69,9 +69,12 @@ CREATE INDEX IF NOT EXISTS idx_audit_events_order_id ON audit_events (order_id);
 `;
 
 async function main() {
-  await pool.query(SCHEMA);
+  // The HTTP driver only runs one statement per request, so split on blank-line-separated statements.
+  const statements = SCHEMA.split(";").map((s) => s.trim()).filter(Boolean);
+  for (const statement of statements) {
+    await query(statement);
+  }
   console.log("Migration complete.");
-  await pool.end();
 }
 
 main().catch((err) => {
