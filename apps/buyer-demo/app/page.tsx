@@ -2,7 +2,7 @@
 
 import { Fragment, useState } from "react";
 import { formatEur, type AlternativeReview, type Outcome, type ScenarioResult, type ScenarioStep, type StepStatus } from "../lib/scenarios";
-import type { AuditEvent, QuoteLine, TrustEnvelope } from "@aimo/shared";
+import type { AuditEvent, ProductLookupResult, QuoteLine, TrustEnvelope } from "@aimo/shared";
 
 const SCENARIO_CARDS = [
   {
@@ -507,6 +507,127 @@ function TransactionWorkspace({ result }: { result: ScenarioResult }) {
   );
 }
 
+function ProductExplorer() {
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<ProductLookupResult[] | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<ProductLookupResult | null>(null);
+  const [qty, setQty] = useState(10);
+  const [customResult, setCustomResult] = useState<ScenarioResult | { error: string; message?: string } | null>(null);
+  const [running, setRunning] = useState(false);
+
+  async function search(e: React.FormEvent) {
+    e.preventDefault();
+    setSearching(true);
+    setSearchError(null);
+    setSelected(null);
+    setCustomResult(null);
+    try {
+      const res = await fetch("/api/search-products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query })
+      });
+      const data = await res.json();
+      if (data.error) {
+        setSearchError(data.message ?? data.error);
+        setSearchResults([]);
+      } else {
+        setSearchResults(data.results);
+      }
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function runCustom() {
+    if (!selected) return;
+    setRunning(true);
+    setCustomResult(null);
+    try {
+      const res = await fetch("/api/custom-quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId: selected.envelope.claim.product_id, qty })
+      });
+      const data = await res.json();
+      setCustomResult(data);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="workspace">
+      <h2 style={{ marginTop: 0 }}>Try it yourself</h2>
+      <p className="explorer-lede">
+        Search the real 17,546-product catalog behind this demo and run any product through the exact same live quote
+        → buyer policy → order pipeline as the four scenarios above — nothing here is special-cased.
+      </p>
+      <form className="explorer-search" onSubmit={search}>
+        <input className="explorer-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="e.g. cheese, salmon, yoghurt…" />
+        <button className="run-btn" type="submit" disabled={searching}>
+          {searching ? "Searching…" : "Search catalog"}
+        </button>
+      </form>
+
+      {searchError && <p className="mock-note explorer-error">{searchError}</p>}
+
+      {searchResults && (
+        <div className="explorer-results">
+          {searchResults.length === 0 && <p className="mock-note">No matches in the catalog for that search.</p>}
+          {searchResults.map((r) => {
+            const id = r.envelope.claim.product_id;
+            const isSelected = selected?.envelope.claim.product_id === id;
+            const containsCodes = r.allergens.filter((a) => a.relation === "CONTAINS").map((a) => a.code);
+            return (
+              <button className={`explorer-item ${isSelected ? "explorer-item-selected" : ""}`} key={id} onClick={() => setSelected(r)} type="button">
+                <div className="explorer-item-name">{r.name}</div>
+                <div className="explorer-item-meta">
+                  {r.envelope.claim.price ? formatEur(r.envelope.claim.price.amount) : "price unavailable"}
+                  <Pill status={r.envelope.claim.availability.status === "out_of_stock" ? "blocked" : "passed"}>
+                    {r.envelope.claim.availability.status.replace(/_/g, " ")}
+                  </Pill>
+                  {containsCodes.length > 0 && <span>allergens: {containsCodes.join(", ")}</span>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {selected && (
+        <div className="detail-card">
+          <h4>Selected: {selected.name}</h4>
+          <div className="explorer-qty-row">
+            <label className="explorer-qty-label">
+              Quantity
+              <input
+                className="explorer-qty-input"
+                type="number"
+                min={1}
+                value={qty}
+                onChange={(e) => setQty(Math.max(1, Number(e.target.value)))}
+              />
+            </label>
+            <button className="run-btn" onClick={runCustom} disabled={running}>
+              {running ? "Running…" : "Run through the agent"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {customResult &&
+        ("error" in customResult ? (
+          <p className="mock-note explorer-error">{customResult.message ?? customResult.error}</p>
+        ) : (
+          <TransactionWorkspace result={customResult} />
+        ))}
+    </div>
+  );
+}
+
 export default function Page() {
   const [results, setResults] = useState<Record<string, ScenarioResult | { error: string; message?: string } | undefined>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
@@ -597,6 +718,9 @@ export default function Page() {
         }
         return <TransactionWorkspace result={result} key={s.id} />;
       })}
+
+      <div className="section-title">Beyond the scripted scenarios</div>
+      <ProductExplorer />
 
       <footer className="note">
         All price, stock and allergen data is from Valio Aimo's Junction26 challenge sandbox — not a production feed. See README.md for

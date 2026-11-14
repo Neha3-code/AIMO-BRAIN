@@ -145,6 +145,18 @@ adds a 4th (partial availability, a mixed basket where one line is ready
 and one isn't, handled independently). All four run from both `npm run demo`
 (CLI) and the web UI (`apps/buyer-demo`'s home page).
 
+## Try it yourself — the real catalog, not just the 4 scenarios
+
+The web UI's "Try it yourself" panel searches the real 17,546-product
+catalog (`GET /v1/products`, backed by Neon + live upstream price/stock)
+and runs any product you pick through the exact same pipeline as the 4
+canned scenarios: quote → buyer policy (allergens, budget, delivery-date
+tolerance) → Aimo guardrail → approval if held → audit. Nothing about
+that decision logic is special-cased for the demo SKUs — it's the same
+`runCustomPurchase` path backed by `apps/buyer-demo/lib/policyEngine.ts`
+and `apps/aimo-api`'s guardrail, just parameterized by whatever product you
+search for.
+
 ## Second independent client
 
 `clients/python/demo.py` hits `aimo-api`'s documented `/v1` contract with

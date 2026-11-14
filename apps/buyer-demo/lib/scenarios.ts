@@ -472,6 +472,159 @@ export async function scenario4PartialAvailability(client: AimoClient = buildCli
   };
 }
 
+/** Try-it-yourself mode — same real pipeline as scenarios 1/2 (quote → buyer policy → order →
+ *  Aimo guardrail → approval if held → audit), but parameterized by any real product from the live
+ *  17,546-SKU catalog instead of a hardcoded demo SKU. Reuses the exact same policy engine and guardrail —
+ *  nothing about the decision logic is special-cased for the canned scenarios. */
+export async function runCustomPurchase(productId: string, qty: number, client: AimoClient = buildClient()): Promise<ScenarioResult> {
+  const steps: ScenarioStep[] = [];
+  const name = "Try it yourself";
+  const tagline = "Custom purchase";
+
+  step(steps, "request", "complete", "Buyer request received", `${qty.toLocaleString()} unit(s) of product ${productId}, price/availability-driven choice.`);
+
+  const quote = await client.requestQuote(BUYER_ID, [{ product_id: productId, qty }]);
+  const line = quote.lines[0];
+
+  if (line.status === "unavailable") {
+    step(steps, "quote", "complete", "Quote obtained", `${line.requested_product_name} is unavailable — see disclosed alternatives below.`, quote);
+    const { chosen, rejected } = pickAllowedAlternative(HOTEL_ESPOO_POLICY, line.alternatives);
+    const rejectedIds = new Set(rejected.map((r) => r.alt.product_id));
+    const alternatives: AlternativeReview[] = line.alternatives.map((alt) => {
+      const isRejected = rejectedIds.has(alt.product_id);
+      const rejectedEntry = rejected.find((r) => r.alt.product_id === alt.product_id);
+      return {
+        rank: alt.rank,
+        product_id: alt.product_id,
+        name: alt.name,
+        price_eur: alt.price_eur,
+        availability_status: alt.availability.status,
+        allergens: alt.allergens,
+        buyerDecision: isRejected ? "rejected" : "eligible",
+        buyerReason: rejectedEntry ? rejectedEntry.reason : chosen?.product_id === alt.product_id ? "Best-ranked option that passes this kitchen's policy." : "Not evaluated (a higher-ranked eligible option was already chosen)."
+      };
+    });
+    for (const r of rejected) {
+      step(steps, "buyer_policy", "rejected", `Rejected: ${r.alt.name}`, r.reason);
+    }
+    const buyerPolicy: PolicyPanel = chosen
+      ? { status: "passed", reason: `Selected rank ${chosen.rank}: ${chosen.product_id} (${chosen.name}) — best-ranked option that passes this kitchen's policy.` }
+      : { status: "blocked", reason: line.alternatives.length === 0 ? "No substitutes are registered for this product in the catalog." : "No disclosed alternative passes this kitchen's policy — reported honestly instead of silently substituting." };
+    step(steps, "result", chosen ? "complete" : "blocked", "Buyer decision", chosen ? "Alternative selected." : "No compliant alternative.");
+
+    return {
+      id: "custom",
+      name,
+      tagline,
+      outcome: chosen ? "substituted" : "no_viable_alternative",
+      headline: chosen ? `Substitute identified: ${chosen.name}` : "No suitable alternative",
+      subheadline: `Requested product unavailable: ${line.requested_product_name}`,
+      transactionId: quote.quote_id,
+      transactionIdKind: "quote",
+      ok: true,
+      steps,
+      buyerPolicy,
+      aimoPolicy: null,
+      quote,
+      order: null,
+      audit: [],
+      requestedProduct: { id: line.requested_product_id, name: line.requested_product_name },
+      alternatives,
+      buyerBannedAllergenCodes: HOTEL_ESPOO_POLICY.bannedAllergenCodes
+    };
+  }
+
+  step(steps, "quote", "complete", "Quote obtained", `${formatEur(quote.total_eur)} for ${qty.toLocaleString()} unit(s) of ${line.requested_product_name}.`, quote);
+
+  const compliance = checkCompliance(HOTEL_ESPOO_POLICY, quote.lines);
+  const deliveryDecision = checkDeliveryDate(HOTEL_ESPOO_POLICY, quote.requested_delivery_date, line.envelope.claim.availability.confirmed_available_date);
+  step(steps, "buyer_policy", deliveryDecision.allowed ? "passed" : "blocked", "Delivery date evaluation", deliveryDecision.reason);
+
+  const allowed = compliance.allowed && deliveryDecision.allowed;
+  const buyerPolicy: PolicyPanel = {
+    status: allowed ? "passed" : "blocked",
+    reason: allowed
+      ? "No allergen, budget or delivery-date violations against this kitchen's own policy."
+      : [...compliance.reasons, !deliveryDecision.allowed ? deliveryDecision.reason : null].filter(Boolean).join(" ")
+  };
+  step(steps, "buyer_policy", buyerPolicy.status, "Buyer policy check", buyerPolicy.status === "passed" ? "Passed." : "Blocked.");
+
+  const deliveryDateDecision = {
+    ...deliveryDecision,
+    requestedDate: quote.requested_delivery_date,
+    confirmedDate: line.envelope.claim.availability.confirmed_available_date
+  };
+
+  if (!allowed) {
+    return {
+      id: "custom",
+      name,
+      tagline,
+      outcome: "blocked",
+      headline: "Order not placed",
+      subheadline: buyerPolicy.reason,
+      transactionId: quote.quote_id,
+      transactionIdKind: "quote",
+      ok: false,
+      steps,
+      buyerPolicy,
+      aimoPolicy: null,
+      quote,
+      order: null,
+      audit: [],
+      deliveryDateDecision
+    };
+  }
+
+  let order = await client.placeOrder(quote.quote_id);
+  const held = order.status === "held_for_approval";
+  const aimoPolicy: PolicyPanel = {
+    status: held ? "human_review" : "passed",
+    reason: held ? (order.approval.reason ?? "Held for Aimo-side review.") : "Within credit limit and auto-approval ceiling."
+  };
+  step(steps, "aimo_policy", aimoPolicy.status, held ? "Aimo places order on hold" : "Aimo policy check", held ? "Human approval required." : "Passed, auto-approved.");
+
+  let governanceCheck: GovernanceCheckResult | undefined;
+  if (held) {
+    step(steps, "order", "complete", "Order submitted", `Quote ${quote.quote_id} committed to Aimo for the commercial guardrail check.`);
+    try {
+      await client.approveOrder(order.order_id, "human:buyer");
+      governanceCheck = { attemptedBy: "human:buyer", rejected: false, httpStatus: 200, rawMessage: "Accepted (this would be a bug)." };
+      step(steps, "approval", "blocked", "Buyer-side approval attempted", "ERROR: incorrectly accepted for an Aimo-owned hold.");
+    } catch (err) {
+      const message = (err as Error).message;
+      const statusMatch = message.match(/failed: (\d+)/);
+      governanceCheck = { attemptedBy: "human:buyer", rejected: true, httpStatus: statusMatch ? Number(statusMatch[1]) : null, rawMessage: message };
+      step(steps, "approval", "info", "Buyer-side approval attempted", `${governanceCheck.httpStatus ?? "error"} — unauthorized. Buyer cannot clear an Aimo-owned hold.`);
+    }
+    order = await client.approveOrder(order.order_id, "human:aimo");
+    step(steps, "approval", "complete", "Aimo human approves", "Authorized.");
+    step(steps, "order", "complete", "Order confirmed", "Released.");
+  }
+
+  const audit = await withAudit(order, client, steps);
+
+  return {
+    id: "custom",
+    name,
+    tagline,
+    outcome: held ? "confirmed_after_approval" : "confirmed_auto",
+    headline: formatEur(quote.total_eur),
+    subheadline: `${qty.toLocaleString()} unit(s) of ${line.requested_product_name}`,
+    transactionId: order.order_id,
+    transactionIdKind: "order",
+    ok: order.status === "confirmed",
+    steps,
+    buyerPolicy,
+    aimoPolicy,
+    quote,
+    order,
+    audit,
+    deliveryDateDecision,
+    governanceCheck
+  };
+}
+
 export const SCENARIOS = [
   { id: "1", fn: scenario1Autonomous },
   { id: "2", fn: scenario2TwoSidedApproval },
