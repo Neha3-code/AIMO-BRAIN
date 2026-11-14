@@ -68,11 +68,63 @@ provided files; price and stock are always fetched live.
   directly rather than guessed — we deliberately did not fabricate one (see
   `apps/aimo-api/src/allergens.ts`).
 
+## Carbon footprint, delivery reliability and recipe chemistry
+
+All three come from the challenge's own data files and are used in real
+decisions, not just displayed.
+
+**Aimo discloses, the buyer decides.** Every quote line and every
+alternative carries a `facts` block: carbon footprint (kg CO2-eq/kg, from
+`valio_aimo_junction26_carbon_footprint.csv`), historical delivery
+reliability (0–1, from `valio_aimo_junction26_delivery_reliability.csv`),
+net weight per sales unit and the declared composition per 100 g (fat,
+protein, carbohydrate, sugar, salt, lactose, from each product's GS1/Synkka
+`nutritionalContent`).
+
+- **Delivery reliability (Aimo side).** Aimo ranks alternatives by what it's
+  accountable for: available now first, then how reliably it has delivered
+  that SKU historically, then price (`apps/aimo-api/src/alternatives.ts`).
+- **Delivery reliability (buyer side).** A substitute the agent picks on its
+  own must have ≥ 95 % historical on-time delivery. For a product the buyer
+  explicitly ordered, low reliability is flagged, not blocking.
+- **Carbon footprint.** Ordered lines show an order-level estimate
+  (quantity × net weight × kg CO2-eq/kg, e.g. 1,000 L of milk ≈ 1,130 kg
+  CO2-eq). A substitute may not raise carbon intensity by more than 20 %
+  over the original.
+- **Recipe-chemistry substitution.** A substitute is compared with the
+  original component by component. Fat, protein, carbohydrate, sugar and
+  salt must each stay within the kitchen's tolerance: the larger of a fixed
+  number of grams per 100 g or 10 % of the original. A lactose-free original
+  must stay lactose-free. So 35 % whipping cream may replace 38 %, but 10 %
+  cooking cream may not replace 15 % (it splits in a reduced sauce). Among
+  the substitutes that pass every check, the agent picks the closest recipe
+  match, then the lower-carbon option (`apps/buyer-demo/lib/policyEngine.ts`).
+
+**Scenario 5** shows all three on real catalog data. Coffee milk 464237 has
+three registered substitutes. The 10 % cream is rejected (+8 g fat/100 g
+breaks the recipe; +65 % CO2-eq/kg). The vanilla variant passes but scores
+lower. The identical 5 dl pack is chosen. `GET /v1/products/:id/substitutes`
+discloses substitutes ahead of a stock-out, so a backup can be pre-qualified.
+The "Find recipe-safe substitutes" button runs the same check on any catalog
+product.
+
+The tolerances, the 95 % minimum and the 20 % carbon limit are example
+kitchen policy invented for this demo (assumption category 3), like the
+banned allergen code.
+
+Composition and package weight are extracted from the 87 MB product file
+into `apps/aimo-api/data/product-facts.json` (~0.5 MB, committed) with
+`npm run build-facts -w @aimo/aimo-api`. They ship with the code, so this
+needs no database migration or re-seed.
+
 ## Two independent guardrail layers
 
 | Situation | Buyer's policy engine (`apps/buyer-demo/lib/policyEngine.ts`) | Aimo's guardrail (`apps/aimo-api/src/guardrail.ts`) |
 |---|---|---|
 | Product contains a banned allergen code | Reject / needs buyer approval | No opinion |
+| Substitute breaks the recipe's composition | Reject | No opinion (discloses composition) |
+| Substitute raises carbon intensity > 20 % | Reject | No opinion (discloses CO2-eq/kg) |
+| Substitute below 95 % delivery reliability | Reject | Ranks alternatives by reliability |
 | Order exceeds kitchen's own budget | Reject or escalate to buyer | No opinion |
 | Buyer exceeds its credit limit with Aimo | No opinion | Hold, needs Aimo approval |
 | Order exceeds Aimo's auto-approval ceiling | No opinion | Hold, needs Aimo approval |
@@ -142,7 +194,8 @@ Also confirmed the same flow through `apps/buyer-demo`'s Next.js API route
 
 See `PROJECT_SPEC.md` §8 for the three scenarios it specifies; this build
 adds a 4th (partial availability, a mixed basket where one line is ready
-and one isn't, handled independently). All four run from both `npm run demo`
+and one isn't, handled independently) and a 5th (recipe-chemistry
+substitution, see above). All five run from both `npm run demo`
 (CLI) and the web UI (`apps/buyer-demo`'s home page).
 
 ## Try it yourself — the real catalog, not just the 4 scenarios

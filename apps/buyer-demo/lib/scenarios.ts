@@ -1,6 +1,18 @@
 import { createAimoClient, type AimoClient } from "./aimoClient";
-import { HOTEL_ESPOO_POLICY, checkCompliance, checkDeliveryDate, pickAllowedAlternative, type DeliveryDateDecision } from "./policyEngine";
-import type { AllergenFact, AuditEvent, Order, Quote, QuoteLine } from "@aimo/shared";
+import {
+  HOTEL_ESPOO_POLICY,
+  checkCompliance,
+  checkDeliveryDate,
+  checkReliability,
+  estimateOrderFootprint,
+  evaluateSubstitutes,
+  factsOf,
+  type CheckResult,
+  type DeliveryDateDecision,
+  type OrderFootprint,
+  type RecipeChemistryResult
+} from "./policyEngine";
+import type { AllergenFact, AuditEvent, Order, ProductFacts, Quote, QuoteAlternative, QuoteLine } from "@aimo/shared";
 
 export type Stage = "request" | "quote" | "buyer_policy" | "aimo_policy" | "approval" | "order" | "audit" | "result";
 export type StepStatus = "complete" | "passed" | "blocked" | "human_review" | "pending" | "rejected" | "info";
@@ -33,8 +45,19 @@ export interface AlternativeReview {
   price_eur: number | null;
   availability_status: string;
   allergens: AllergenFact[];
-  buyerDecision: "eligible" | "rejected";
+  buyerDecision: "selected" | "eligible" | "rejected";
   buyerReason: string;
+  checks: CheckResult[];
+  recipe: RecipeChemistryResult;
+  facts: ProductFacts;
+  carbonDeltaPct: number | null;
+}
+
+/** Carbon footprint + delivery reliability of the product actually being ordered. */
+export interface SustainabilityPanel {
+  productName: string;
+  footprint: OrderFootprint;
+  reliability: CheckResult & { value: number | null };
 }
 
 export interface ScenarioResult {
@@ -60,6 +83,10 @@ export interface ScenarioResult {
   buyerBannedAllergenCodes?: string[];
   eligibleLineValueEur?: number;
   deliveryDateDecision?: DeliveryDateDecision & { requestedDate: string; confirmedDate: string | null };
+  sustainability?: SustainabilityPanel;
+  /** Facts for the requested (original) product a substitution is measured against. */
+  originalFacts?: ProductFacts;
+  alternativesRanking?: string;
   /** The one or two quote lines actually relevant to this scenario's narrative, when the
    *  full quote (e.g. scenario 3/4's multi-candidate probe) contains unrelated noise lines. */
   relevantLines?: QuoteLine[];
@@ -80,6 +107,85 @@ export function buildClient(): AimoClient {
 }
 
 const BUYER_ID = process.env.BUYER_ID ?? "k-hotel-espoo";
+
+/** Carbon footprint + delivery reliability for the line being ordered. Reliability below the
+ *  kitchen's minimum is flagged, not blocking: the buyer asked for this exact SKU, so the agent
+ *  surfaces the delivery risk instead of second-guessing the request. Substitutes the agent picks
+ *  on its own ARE held to the minimum (see evaluateSubstitutes). */
+function assessSustainability(steps: ScenarioStep[], line: QuoteLine): SustainabilityPanel {
+  const facts = factsOf(line);
+  if (!line.facts) {
+    const note = "The connected Aimo API version doesn't disclose carbon or delivery-reliability facts on quote lines yet — redeploy apps/aimo-api.";
+    step(steps, "buyer_policy", "info", "Carbon footprint and delivery reliability", note);
+    return {
+      productName: line.requested_product_name,
+      footprint: { intensityKgCo2ePerKg: null, netWeightKgPerUnit: null, totalWeightKg: null, totalKgCo2e: null, note },
+      reliability: { check: "reliability", status: "warn", detail: "", value: null }
+    };
+  }
+  const footprint = estimateOrderFootprint(facts, line.requested_qty);
+  step(
+    steps,
+    "buyer_policy",
+    "info",
+    "Carbon footprint",
+    footprint.intensityKgCo2ePerKg !== null ? `${footprint.intensityKgCo2ePerKg} kg CO2-eq/kg. ${footprint.note}` : footprint.note
+  );
+  const reliability = checkReliability(HOTEL_ESPOO_POLICY, facts.delivery_reliability);
+  step(
+    steps,
+    "buyer_policy",
+    reliability.status === "pass" ? "passed" : "info",
+    "Delivery reliability",
+    reliability.status === "fail" ? `${reliability.detail} Flagged for the buyer: consider a buffer stock — not blocking, since this exact SKU was requested.` : reliability.detail
+  );
+  return { productName: line.requested_product_name, footprint, reliability: { ...reliability, value: facts.delivery_reliability } };
+}
+
+function sustainabilitySentence(s: SustainabilityPanel): string {
+  const parts: string[] = [];
+  if (s.footprint.totalKgCo2e !== null) parts.push(`estimated footprint ≈ ${s.footprint.totalKgCo2e.toLocaleString("en-US")} kg CO2-eq`);
+  else if (s.footprint.intensityKgCo2ePerKg !== null) parts.push(`${s.footprint.intensityKgCo2ePerKg} kg CO2-eq/kg`);
+  if (s.reliability.value !== null) parts.push(`${Math.round(s.reliability.value * 1000) / 10} % historical on-time delivery${s.reliability.status === "fail" ? " (below the kitchen's minimum — flagged)" : ""}`);
+  return parts.length ? ` Disclosed: ${parts.join(", ")}.` : "";
+}
+
+/** Runs every disclosed alternative through the kitchen's full substitution policy and records
+ *  one timeline step per rejection plus the final pick. */
+function reviewAlternatives(
+  steps: ScenarioStep[],
+  originalFacts: ProductFacts,
+  alts: QuoteAlternative[]
+): { alternatives: AlternativeReview[]; chosen: QuoteAlternative | null } {
+  const { evaluations, chosen } = evaluateSubstitutes(HOTEL_ESPOO_POLICY, originalFacts, alts);
+  const alternatives: AlternativeReview[] = evaluations.map((e) => {
+    const failed = e.checks.filter((c) => c.status === "fail");
+    const isChosen = chosen?.alt.product_id === e.alt.product_id;
+    return {
+      rank: e.alt.rank,
+      product_id: e.alt.product_id,
+      name: e.alt.name,
+      price_eur: e.alt.price_eur,
+      availability_status: e.alt.availability.status,
+      allergens: e.alt.allergens,
+      buyerDecision: isChosen ? "selected" : e.eligible ? "eligible" : "rejected",
+      buyerReason: isChosen
+        ? `Selected: passes every check${e.recipe.score !== null ? ` with the closest recipe match (${e.recipe.score}/100)` : ""}.`
+        : e.eligible
+          ? "Passes every check, but a closer recipe match (or lower-carbon option) was available."
+          : failed.map((c) => c.detail).join(" "),
+      checks: e.checks,
+      recipe: e.recipe,
+      facts: factsOf(e.alt),
+      carbonDeltaPct: e.carbonDeltaPct
+    };
+  });
+  for (const a of alternatives.filter((x) => x.buyerDecision === "rejected")) {
+    const failedChecks = a.checks.filter((c) => c.status === "fail").map((c) => c.check);
+    step(steps, "buyer_policy", "rejected", `Rejected: ${a.name}`, `Failed ${failedChecks.join(", ")} — ${a.buyerReason}`);
+  }
+  return { alternatives, chosen: chosen?.alt ?? null };
+}
 
 async function withAudit(order: Order | null, client: AimoClient, steps: ScenarioStep[]): Promise<AuditEvent[]> {
   if (!order) return [];
@@ -117,11 +223,13 @@ export async function scenario1Autonomous(client: AimoClient = buildClient()): P
     deliveryDecision.reason
   );
 
+  const sustainability = assessSustainability(steps, line);
+
   const allowed = compliance.allowed && deliveryDecision.allowed;
   const buyerPolicy: PolicyPanel = {
     status: allowed ? "passed" : "blocked",
     reason: allowed
-      ? "No allergen, budget or delivery-date violations against this kitchen's own policy."
+      ? "No allergen, budget or delivery-date violations against this kitchen's own policy." + sustainabilitySentence(sustainability)
       : [...compliance.reasons, !deliveryDecision.allowed ? deliveryDecision.reason : null].filter(Boolean).join(" ")
   };
   step(steps, "buyer_policy", buyerPolicy.status, "Buyer policy check", buyerPolicy.status === "passed" ? "Passed." : "Blocked.");
@@ -149,7 +257,8 @@ export async function scenario1Autonomous(client: AimoClient = buildClient()): P
       quote,
       order: null,
       audit: [],
-      deliveryDateDecision
+      deliveryDateDecision,
+      sustainability
     };
   }
 
@@ -179,7 +288,8 @@ export async function scenario1Autonomous(client: AimoClient = buildClient()): P
     quote,
     order,
     audit,
-    deliveryDateDecision
+    deliveryDateDecision,
+    sustainability
   };
 }
 
@@ -199,11 +309,13 @@ export async function scenario2TwoSidedApproval(client: AimoClient = buildClient
   const deliveryDecision = checkDeliveryDate(HOTEL_ESPOO_POLICY, quote.requested_delivery_date, line.envelope.claim.availability.confirmed_available_date);
   step(steps, "buyer_policy", deliveryDecision.allowed ? "passed" : "blocked", "Delivery date evaluation", deliveryDecision.reason);
 
+  const sustainability = assessSustainability(steps, line);
+
   const allowed = compliance.allowed && deliveryDecision.allowed;
   const buyerPolicy: PolicyPanel = {
     status: allowed ? "passed" : "blocked",
     reason: allowed
-      ? "Buyer policy clears the product selection and delivery date — no opinion on Aimo's commercial risk."
+      ? "Buyer policy clears the product selection and delivery date — no opinion on Aimo's commercial risk." + sustainabilitySentence(sustainability)
       : [...compliance.reasons, !deliveryDecision.allowed ? deliveryDecision.reason : null].filter(Boolean).join(" ")
   };
   step(steps, "buyer_policy", buyerPolicy.status, "Buyer policy check", buyerPolicy.status === "passed" ? "Passed." : "Blocked.");
@@ -231,7 +343,8 @@ export async function scenario2TwoSidedApproval(client: AimoClient = buildClient
       quote,
       order: null,
       audit: [],
-      deliveryDateDecision
+      deliveryDateDecision,
+      sustainability
     };
   }
 
@@ -282,7 +395,8 @@ export async function scenario2TwoSidedApproval(client: AimoClient = buildClient
     order,
     audit,
     governanceCheck,
-    deliveryDateDecision
+    deliveryDateDecision,
+    sustainability
   };
 }
 
@@ -338,31 +452,11 @@ export async function scenario3StockOutSubstitution(client: AimoClient = buildCl
 
   const alternativesNote = `${SUBSTITUTION_CANDIDATES.length} candidate SKUs were checked for availability — only the one that came back out of stock had a real substitute registered. The backend returned ${unavailable.alternatives.length} actual substitute(s) for that one product, from its own substitutions list (not the other 7 candidates).`;
 
-  const { chosen, rejected } = pickAllowedAlternative(HOTEL_ESPOO_POLICY, unavailable.alternatives);
-  const rejectedIds = new Set(rejected.map((r) => r.alt.product_id));
-
-  const alternatives: AlternativeReview[] = unavailable.alternatives.map((alt) => {
-    const isRejected = rejectedIds.has(alt.product_id);
-    const rejectedEntry = rejected.find((r) => r.alt.product_id === alt.product_id);
-    return {
-      rank: alt.rank,
-      product_id: alt.product_id,
-      name: alt.name,
-      price_eur: alt.price_eur,
-      availability_status: alt.availability.status,
-      allergens: alt.allergens,
-      buyerDecision: isRejected ? "rejected" : "eligible",
-      buyerReason: rejectedEntry ? rejectedEntry.reason : chosen?.product_id === alt.product_id ? "Best-ranked option that passes this kitchen's policy." : "Not evaluated (a higher-ranked eligible option was already chosen)."
-    };
-  });
-
-  for (const r of rejected) {
-    step(steps, "buyer_policy", "rejected", `Rejected: ${r.alt.name}`, r.reason);
-  }
+  const { alternatives, chosen } = reviewAlternatives(steps, factsOf(unavailable), unavailable.alternatives);
 
   const buyerPolicy: PolicyPanel = chosen
-    ? { status: "passed", reason: `Selected rank ${chosen.rank}: ${chosen.product_id} (${chosen.name}) — best-ranked option that passes this kitchen's policy.` }
-    : { status: "blocked", reason: "No disclosed alternative passes this kitchen's policy — reported honestly instead of silently substituting." };
+    ? { status: "passed", reason: `Selected Aimo rank ${chosen.rank}: ${chosen.product_id} (${chosen.name}) — the closest recipe match that also passes this kitchen's allergen, carbon and delivery-reliability rules.` }
+    : { status: "blocked", reason: "No disclosed alternative passes this kitchen's policy (allergens, recipe chemistry, carbon, delivery reliability) — reported honestly instead of silently substituting." };
   step(steps, "result", chosen ? "complete" : "blocked", "Buyer decision", chosen ? "Alternative selected." : "No compliant alternative.");
 
   return {
@@ -384,7 +478,9 @@ export async function scenario3StockOutSubstitution(client: AimoClient = buildCl
     requestedProduct: { id: unavailable.requested_product_id, name: unavailable.requested_product_name },
     alternatives,
     alternativesNote,
-    buyerBannedAllergenCodes: HOTEL_ESPOO_POLICY.bannedAllergenCodes
+    buyerBannedAllergenCodes: HOTEL_ESPOO_POLICY.bannedAllergenCodes,
+    originalFacts: factsOf(unavailable),
+    alternativesRanking: unavailable.alternatives_ranking
   };
 }
 
@@ -472,6 +568,84 @@ export async function scenario4PartialAvailability(client: AimoClient = buildCli
   };
 }
 
+/** Scenario 5 — recipe-chemistry substitution. Coffee milk (464237) has three real registered
+ *  substitutes in the catalog: an identical smaller pack, a vanilla-flavoured variant and a 10 % cream.
+ *  All three are "valid substitutes" by the catalog's own data — but only some keep the kitchen's café
+ *  drinks working. The buyer agent asks Aimo for the disclosed substitutes ahead of any stock-out and
+ *  pre-qualifies a backup on composition (fat, protein, carbohydrate, sugar, salt, lactose), carbon
+ *  intensity and historical delivery reliability. Lookup only — nothing is quoted or ordered. */
+export const RECIPE_DEMO_PRODUCT_ID = "464237";
+
+export async function scenario5RecipeChemistry(client: AimoClient = buildClient(), productId: string = RECIPE_DEMO_PRODUCT_ID): Promise<ScenarioResult> {
+  const steps: ScenarioStep[] = [];
+  const name = "Recipe-chemistry substitution";
+  const tagline = "Recipe-safe backup";
+
+  step(steps, "request", "complete", "Buyer request received", `Pre-qualify a recipe-safe backup for product ${productId} before it ever runs out.`);
+
+  let subs;
+  try {
+    subs = await client.getSubstitutes(productId);
+  } catch (err) {
+    const message = (err as Error).message;
+    if (/\b404\b/.test(message) && !/not_found/.test(message)) {
+      throw new Error("The connected Aimo API doesn't expose GET /v1/products/:id/substitutes yet — redeploy apps/aimo-api to enable this scenario.");
+    }
+    throw err;
+  }
+
+  const original = subs.facts;
+  const comp = original.composition;
+  step(
+    steps,
+    "quote",
+    "complete",
+    "Aimo discloses registered substitutes",
+    `${subs.name}: ${subs.alternatives.length} registered substitute(s), ranked by Aimo on stock, delivery reliability and price. ${
+      comp ? `Original per 100 g: fat ${comp.fat_g ?? "?"} g, protein ${comp.protein_g ?? "?"} g, carbohydrate ${comp.carbohydrate_g ?? "?"} g, sugar ${comp.sugar_g ?? "?"} g, lactose ${comp.lactose_g ?? "?"} g` : "No declared composition for the original"
+    }; ${original.carbon_footprint_kg_co2e_per_kg ?? "?"} kg CO2-eq/kg.`,
+    subs
+  );
+
+  const { alternatives, chosen } = reviewAlternatives(steps, original, subs.alternatives);
+
+  const buyerPolicy: PolicyPanel = chosen
+    ? {
+        status: "passed",
+        reason: `Backup pre-qualified: ${chosen.product_id} (${chosen.name}) — closest recipe match that also passes this kitchen's allergen, carbon and delivery-reliability rules. ${alternatives.filter((a) => a.buyerDecision === "rejected").length} of ${alternatives.length} registered substitutes rejected.`
+      }
+    : {
+        status: "blocked",
+        reason: subs.alternatives.length === 0 ? "No substitutes are registered for this product in the catalog." : "None of the registered substitutes keeps the recipe, carbon and delivery-reliability rules — a human has to choose."
+      };
+  step(steps, "result", chosen ? "complete" : "blocked", "Buyer decision", chosen ? `Backup set to ${chosen.name}.` : "No recipe-safe backup.");
+
+  return {
+    id: "5",
+    name,
+    tagline,
+    outcome: chosen ? "substituted" : "no_viable_alternative",
+    headline: chosen ? `Recipe-safe backup: ${chosen.name}` : "No recipe-safe backup",
+    subheadline: `For ${subs.name} — ${alternatives.filter((a) => a.buyerDecision === "rejected").length} of ${alternatives.length} catalog substitutes rejected on recipe chemistry, carbon or delivery reliability`,
+    transactionId: null,
+    transactionIdKind: null,
+    ok: true,
+    steps,
+    buyerPolicy,
+    aimoPolicy: null,
+    quote: null,
+    order: null,
+    audit: [],
+    requestedProduct: { id: subs.product_id, name: subs.name },
+    alternatives,
+    buyerBannedAllergenCodes: HOTEL_ESPOO_POLICY.bannedAllergenCodes,
+    originalFacts: original,
+    alternativesRanking: subs.alternatives_ranking,
+    alternativesNote:
+      "Every option below is a real substitute registered in Valio Aimo's catalog. The catalog says it can replace the original; the kitchen's recipe-chemistry check decides whether it actually does."
+  };
+}
+
 /** Try-it-yourself mode — same real pipeline as scenarios 1/2 (quote → buyer policy → order →
  *  Aimo guardrail → approval if held → audit), but parameterized by any real product from the live
  *  17,546-SKU catalog instead of a hardcoded demo SKU. Reuses the exact same policy engine and guardrail —
@@ -488,28 +662,10 @@ export async function runCustomPurchase(productId: string, qty: number, client: 
 
   if (line.status === "unavailable") {
     step(steps, "quote", "complete", "Quote obtained", `${line.requested_product_name} is unavailable — see disclosed alternatives below.`, quote);
-    const { chosen, rejected } = pickAllowedAlternative(HOTEL_ESPOO_POLICY, line.alternatives);
-    const rejectedIds = new Set(rejected.map((r) => r.alt.product_id));
-    const alternatives: AlternativeReview[] = line.alternatives.map((alt) => {
-      const isRejected = rejectedIds.has(alt.product_id);
-      const rejectedEntry = rejected.find((r) => r.alt.product_id === alt.product_id);
-      return {
-        rank: alt.rank,
-        product_id: alt.product_id,
-        name: alt.name,
-        price_eur: alt.price_eur,
-        availability_status: alt.availability.status,
-        allergens: alt.allergens,
-        buyerDecision: isRejected ? "rejected" : "eligible",
-        buyerReason: rejectedEntry ? rejectedEntry.reason : chosen?.product_id === alt.product_id ? "Best-ranked option that passes this kitchen's policy." : "Not evaluated (a higher-ranked eligible option was already chosen)."
-      };
-    });
-    for (const r of rejected) {
-      step(steps, "buyer_policy", "rejected", `Rejected: ${r.alt.name}`, r.reason);
-    }
+    const { alternatives, chosen } = reviewAlternatives(steps, factsOf(line), line.alternatives);
     const buyerPolicy: PolicyPanel = chosen
-      ? { status: "passed", reason: `Selected rank ${chosen.rank}: ${chosen.product_id} (${chosen.name}) — best-ranked option that passes this kitchen's policy.` }
-      : { status: "blocked", reason: line.alternatives.length === 0 ? "No substitutes are registered for this product in the catalog." : "No disclosed alternative passes this kitchen's policy — reported honestly instead of silently substituting." };
+      ? { status: "passed", reason: `Selected Aimo rank ${chosen.rank}: ${chosen.product_id} (${chosen.name}) — the closest recipe match that also passes this kitchen's allergen, carbon and delivery-reliability rules.` }
+      : { status: "blocked", reason: line.alternatives.length === 0 ? "No substitutes are registered for this product in the catalog." : "No disclosed alternative passes this kitchen's policy (allergens, recipe chemistry, carbon, delivery reliability) — reported honestly instead of silently substituting." };
     step(steps, "result", chosen ? "complete" : "blocked", "Buyer decision", chosen ? "Alternative selected." : "No compliant alternative.");
 
     return {
@@ -530,7 +686,9 @@ export async function runCustomPurchase(productId: string, qty: number, client: 
       audit: [],
       requestedProduct: { id: line.requested_product_id, name: line.requested_product_name },
       alternatives,
-      buyerBannedAllergenCodes: HOTEL_ESPOO_POLICY.bannedAllergenCodes
+      buyerBannedAllergenCodes: HOTEL_ESPOO_POLICY.bannedAllergenCodes,
+      originalFacts: factsOf(line),
+      alternativesRanking: line.alternatives_ranking
     };
   }
 
@@ -540,11 +698,13 @@ export async function runCustomPurchase(productId: string, qty: number, client: 
   const deliveryDecision = checkDeliveryDate(HOTEL_ESPOO_POLICY, quote.requested_delivery_date, line.envelope.claim.availability.confirmed_available_date);
   step(steps, "buyer_policy", deliveryDecision.allowed ? "passed" : "blocked", "Delivery date evaluation", deliveryDecision.reason);
 
+  const sustainability = assessSustainability(steps, line);
+
   const allowed = compliance.allowed && deliveryDecision.allowed;
   const buyerPolicy: PolicyPanel = {
     status: allowed ? "passed" : "blocked",
     reason: allowed
-      ? "No allergen, budget or delivery-date violations against this kitchen's own policy."
+      ? "No allergen, budget or delivery-date violations against this kitchen's own policy." + sustainabilitySentence(sustainability)
       : [...compliance.reasons, !deliveryDecision.allowed ? deliveryDecision.reason : null].filter(Boolean).join(" ")
   };
   step(steps, "buyer_policy", buyerPolicy.status, "Buyer policy check", buyerPolicy.status === "passed" ? "Passed." : "Blocked.");
@@ -572,7 +732,8 @@ export async function runCustomPurchase(productId: string, qty: number, client: 
       quote,
       order: null,
       audit: [],
-      deliveryDateDecision
+      deliveryDateDecision,
+      sustainability
     };
   }
 
@@ -621,6 +782,7 @@ export async function runCustomPurchase(productId: string, qty: number, client: 
     order,
     audit,
     deliveryDateDecision,
+    sustainability,
     governanceCheck
   };
 }
@@ -629,7 +791,8 @@ export const SCENARIOS = [
   { id: "1", fn: scenario1Autonomous },
   { id: "2", fn: scenario2TwoSidedApproval },
   { id: "3", fn: scenario3StockOutSubstitution },
-  { id: "4", fn: scenario4PartialAvailability }
+  { id: "4", fn: scenario4PartialAvailability },
+  { id: "5", fn: scenario5RecipeChemistry }
 ] as const;
 
 export async function runAllScenarios(): Promise<ScenarioResult[]> {
@@ -638,6 +801,7 @@ export async function runAllScenarios(): Promise<ScenarioResult[]> {
     await scenario1Autonomous(client),
     await scenario2TwoSidedApproval(client),
     await scenario3StockOutSubstitution(client),
-    await scenario4PartialAvailability(client)
+    await scenario4PartialAvailability(client),
+    await scenario5RecipeChemistry(client)
   ];
 }

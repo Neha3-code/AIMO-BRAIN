@@ -1,13 +1,15 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { Quote, QuoteAlternative, QuoteLine } from "@aimo/shared";
+import type { Quote, QuoteLine } from "@aimo/shared";
 import { getCatalogProducts } from "../catalog.js";
-import { getUpstreamPrices, getUpstreamAvailability, type UpstreamAvailability, type UpstreamPrice } from "../upstream.js";
+import { getUpstreamPrices, getUpstreamAvailability } from "../upstream.js";
 import { buildPriceAvailabilityEnvelope } from "../trustEnvelope.js";
 import { query } from "../db.js";
 import { newId } from "../ids.js";
 import { requireBuyerAuth, type AuthedRequest } from "../auth.js";
 import { getBuyer } from "../buyers.js";
+import { buildAlternatives, isAvailable, unitPrice, ALTERNATIVES_RANKING } from "../alternatives.js";
+import { productFacts } from "../productFacts.js";
 
 const QUOTE_TTL_MS = 10 * 60 * 1000;
 
@@ -16,19 +18,6 @@ const QuoteRequestSchema = z.object({
   lines: z.array(z.object({ product_id: z.string(), qty: z.number().positive() })).min(1),
   requested_date: z.string().optional()
 });
-
-function isAvailable(avail: UpstreamAvailability | undefined): boolean {
-  if (!avail) return false;
-  if (avail.salesBlock) return false;
-  const line = avail.scheduleLines?.[0];
-  if (!line) return false;
-  if (avail.logisticModel === "Terminal") return true; // supplier-fulfilled, treated as available
-  return line.availableAmount > 0;
-}
-
-function unitPrice(price: UpstreamPrice | undefined): number | null {
-  return price?.catalogPrice?.valueWithTax ?? null;
-}
 
 export function registerQuoteRoutes(app: FastifyInstance) {
   app.post("/v1/quote", { preHandler: requireBuyerAuth }, async (request: AuthedRequest, reply) => {
@@ -69,51 +58,18 @@ export function registerQuoteRoutes(app: FastifyInstance) {
           unit_price_eur: price,
           line_total_eur: price !== null ? Math.round(price * line.qty * 100) / 100 : null,
           alternatives: [],
+          facts: productFacts(line.product_id, catalogProduct),
           envelope: buildPriceAvailabilityEnvelope(line.product_id, priceById.get(line.product_id), avail)
         });
         continue;
       }
 
       // Unavailable: rank the product's real substitutions by Aimo's own
-      // commercial attributes only (price, stock, delivery). Full list,
-      // allergens disclosed on every option — no buyer-policy filtering
-      // happens here (that's the §0 fix: filtering is strictly buyer-side).
-      const subIds: string[] = (catalogProduct?.substitutions ?? []).slice(0, 10);
-      const subCatalog = await getCatalogProducts(subIds);
-      const subCatalogById = new Map(subCatalog.map((c) => [c.id, c]));
-
-      const [subPrices, subAvail] = await Promise.all([
-        getUpstreamPrices(subIds, requestedDate, buyerId),
-        getUpstreamAvailability(subIds, requestedDate, buyerId)
-      ]);
-      const subPriceById = new Map(subPrices.map((p) => [p.productId, p]));
-      const subAvailById = new Map(subAvail.map((a) => [a.productId, a]));
-
-      const alternatives: QuoteAlternative[] = subIds
-        .map((id) => {
-          const c = subCatalogById.get(id);
-          const a = subAvailById.get(id);
-          const p = subPriceById.get(id);
-          const schedule = a?.scheduleLines?.[0];
-          return {
-            product_id: id,
-            name: c?.name_en ?? id,
-            price_eur: unitPrice(p),
-            availability: {
-              status: isAvailable(a) ? ("in_stock" as const) : ("out_of_stock" as const),
-              quantity: schedule?.availableAmount ?? null,
-              confirmed_available_date: schedule?.availableDate ?? null
-            },
-            delivery_lead_time_days: schedule?.availableDate
-              ? Math.max(0, Math.round((new Date(schedule.availableDate).getTime() - Date.now()) / 86400000))
-              : null,
-            allergens: c?.allergens ?? [],
-            envelope: buildPriceAvailabilityEnvelope(id, p, a),
-            rank: 0
-          };
-        })
-        .sort((a, b) => (a.price_eur ?? Infinity) - (b.price_eur ?? Infinity))
-        .map((alt, idx) => ({ ...alt, rank: idx + 1 }));
+      // commercial attributes only (stock, delivery reliability, price). Full
+      // list, allergens/carbon/composition disclosed on every option — no
+      // buyer-policy filtering happens here (that's the §0 fix: filtering is
+      // strictly buyer-side).
+      const alternatives = await buildAlternatives(catalogProduct?.substitutions ?? [], requestedDate, buyerId);
 
       quoteLines.push({
         requested_product_id: line.product_id,
@@ -123,6 +79,8 @@ export function registerQuoteRoutes(app: FastifyInstance) {
         unit_price_eur: null,
         line_total_eur: null,
         alternatives,
+        alternatives_ranking: ALTERNATIVES_RANKING,
+        facts: productFacts(line.product_id, catalogProduct),
         envelope: buildPriceAvailabilityEnvelope(line.product_id, priceById.get(line.product_id), avail)
       });
     }

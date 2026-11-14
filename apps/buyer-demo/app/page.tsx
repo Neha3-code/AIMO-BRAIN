@@ -1,8 +1,9 @@
 "use client";
 
 import { Fragment, useState } from "react";
-import { formatEur, type AlternativeReview, type Outcome, type ScenarioResult, type ScenarioStep, type StepStatus } from "../lib/scenarios";
-import type { AuditEvent, ProductLookupResult, QuoteLine, TrustEnvelope } from "@aimo/shared";
+import { formatEur, type AlternativeReview, type Outcome, type ScenarioResult, type StepStatus } from "../lib/scenarios";
+import type { CheckResult } from "../lib/policyEngine";
+import type { AuditEvent, ProductFacts, ProductLookupResult, QuoteLine, TrustEnvelope } from "@aimo/shared";
 
 const SCENARIO_CARDS = [
   {
@@ -44,6 +45,16 @@ const SCENARIO_CARDS = [
     title: "Partial availability",
     description: "Handle available and unavailable lines separately.",
     outcome: "1 of 2 lines eligible"
+  },
+  {
+    id: "5",
+    index: "05",
+    badge: "RECIPE",
+    tone: "good" as const,
+    icon: "flask" as const,
+    title: "Recipe-chemistry substitution",
+    description: "Pick a backup that keeps the recipe, carbon and delivery reliability intact.",
+    outcome: "Recipe-safe backup chosen"
   }
 ];
 
@@ -54,7 +65,7 @@ const EXAMPLE_SEARCHES: { label: string; query: string }[] = [
   { label: "Find wheat bread", query: "wheat bread" }
 ];
 
-function ScenarioIcon({ name }: { name: "cart" | "userCheck" | "shield" | "box" }) {
+function ScenarioIcon({ name }: { name: "cart" | "userCheck" | "shield" | "box" | "flask" }) {
   const common = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   switch (name) {
     case "cart":
@@ -87,6 +98,14 @@ function ScenarioIcon({ name }: { name: "cart" | "userCheck" | "shield" | "box" 
           <path d="M21 8l-9-5-9 5 9 5 9-5Z" />
           <path d="M3 8v8l9 5 9-5V8" />
           <path d="M12 13v8" />
+        </svg>
+      );
+    case "flask":
+      return (
+        <svg {...common}>
+          <path d="M9 3h6" />
+          <path d="M10 3v6L4.5 18.5A2 2 0 0 0 6.2 21.5h11.6a2 2 0 0 0 1.7-3L14 9V3" />
+          <path d="M7 15h10" />
         </svg>
       );
   }
@@ -196,7 +215,13 @@ function Hero({ result }: { result: ScenarioResult }) {
       <div className="hero-sub">{result.subheadline}</div>
       {wasHeldFirst && <div className="hero-journey">Held for Aimo-side approval first, then confirmed — not auto-approved.</div>}
       <div className="hero-ref">
-        {result.transactionIdKind === "order" ? "Order reference" : "Quote reference (no order placed)"}: <code>{result.transactionId}</code>
+        {result.transactionId === null ? (
+          "Catalog lookup only — nothing quoted or ordered"
+        ) : (
+          <>
+            {result.transactionIdKind === "order" ? "Order reference" : "Quote reference (no order placed)"}: <code>{result.transactionId}</code>
+          </>
+        )}
       </div>
     </div>
   );
@@ -247,15 +272,95 @@ function DeliveryDateCard({ result }: { result: ScenarioResult }) {
   );
 }
 
+function fmtNum(n: number | null | undefined, unit = ""): string {
+  if (n === null || n === undefined || Number.isNaN(n)) return "—";
+  return `${n.toLocaleString("en-US", { maximumFractionDigits: 3 })}${unit}`;
+}
+
+function fmtPct(n: number | null | undefined): string {
+  if (n === null || n === undefined || Number.isNaN(n)) return "no history";
+  return `${Math.round(n * 1000) / 10} %`;
+}
+
+const CHECK_STATUS: Record<CheckResult["status"], StepStatus> = { pass: "passed", warn: "pending", fail: "rejected" };
+const CHECK_LABEL: Record<CheckResult["check"], string> = {
+  availability: "Stock",
+  allergens: "Allergens",
+  recipe: "Recipe chemistry",
+  carbon: "Carbon",
+  reliability: "Delivery reliability"
+};
+
+function SustainabilityCard({ result }: { result: ScenarioResult }) {
+  const s = result.sustainability;
+  if (!s) return null;
+  const f = s.footprint;
+  return (
+    <div className="detail-card">
+      <h4>Carbon footprint and delivery reliability</h4>
+      <div className="metric-grid">
+        <div className="metric">
+          <div className="metric-label">Order footprint (estimate)</div>
+          <div className="metric-value">{f.totalKgCo2e !== null ? `≈ ${f.totalKgCo2e.toLocaleString("en-US")} kg CO₂e` : "—"}</div>
+          <div className="metric-sub">
+            {f.intensityKgCo2ePerKg !== null ? `${fmtNum(f.intensityKgCo2ePerKg)} kg CO₂e per kg` : "no figure disclosed"}
+            {f.totalWeightKg !== null && ` · ${f.totalWeightKg.toLocaleString("en-US")} kg of product`}
+          </div>
+        </div>
+        <div className="metric">
+          <div className="metric-label">Historical delivery reliability</div>
+          <div className="metric-value">{fmtPct(s.reliability.value)}</div>
+          <div className="metric-sub">
+            <Pill status={CHECK_STATUS[s.reliability.status]}>
+              {s.reliability.status === "pass" ? "meets minimum" : s.reliability.status === "fail" ? "below minimum — flagged" : "unknown"}
+            </Pill>
+          </div>
+        </div>
+      </div>
+      <p className="mock-note" style={{ marginTop: 8 }}>
+        {f.note} {s.reliability.detail} Source: the challenge's carbon footprint and delivery reliability files, disclosed by Aimo on every
+        quote line; weight from the product's own packaging data.
+      </p>
+    </div>
+  );
+}
+
+function OriginalFactsRow({ facts }: { facts: ProductFacts }) {
+  const c = facts.composition;
+  return (
+    <div className="original-facts">
+      <span>
+        <strong>Original per 100 g:</strong>{" "}
+        {c
+          ? `fat ${fmtNum(c.fat_g, " g")} · protein ${fmtNum(c.protein_g, " g")} · carbohydrate ${fmtNum(c.carbohydrate_g, " g")} · sugar ${fmtNum(c.sugar_g, " g")} · salt ${fmtNum(c.salt_g, " g")} · lactose ${fmtNum(c.lactose_g, " g")}`
+          : "no declared composition"}
+      </span>
+      <span>
+        <strong>Carbon:</strong> {facts.carbon_footprint_kg_co2e_per_kg !== null ? `${fmtNum(facts.carbon_footprint_kg_co2e_per_kg)} kg CO₂e/kg` : "not disclosed"} ·{" "}
+        <strong>Delivery reliability:</strong> {fmtPct(facts.delivery_reliability)}
+      </span>
+    </div>
+  );
+}
+
 function AlternativesTable({ result }: { result: ScenarioResult }) {
   if (!result.alternatives || !result.requestedProduct) return null;
   const single = result.alternatives.length === 1;
   const singleRejected = single && result.alternatives[0].buyerDecision === "rejected";
+  const lookupOnly = result.transactionId === null;
   return (
     <div className="detail-card">
-      <h4>{singleRejected ? "Substitution rejected" : single ? "Actual substitute returned by Aimo" : "Requested vs. disclosed alternatives"}</h4>
+      <h4>
+        {lookupOnly
+          ? "Registered substitutes, evaluated by the buyer agent"
+          : singleRejected
+            ? "Substitution rejected"
+            : single
+              ? "Actual substitute returned by Aimo"
+              : "Requested vs. disclosed alternatives"}
+      </h4>
       <div className="kv-row">
-        <span className="k">Requested, unavailable</span>
+        <span className="k">{lookupOnly ? "Original product" : "Requested, unavailable"}</span>
         <span className="v">
           {result.requestedProduct.name} ({result.requestedProduct.id})
         </span>
@@ -267,42 +372,78 @@ function AlternativesTable({ result }: { result: ScenarioResult }) {
           <span className="v">{result.buyerBannedAllergenCodes.join(", ")}</span>
         </div>
       )}
-      <table className="alt-table">
-        <thead>
-          <tr>
-            <th>Product</th>
-            <th>Price</th>
-            <th>Availability</th>
-            <th>Buyer policy</th>
-          </tr>
-        </thead>
-        <tbody>
-          {result.alternatives.map((alt: AlternativeReview) => (
-            <Fragment key={alt.product_id}>
-              <tr className={alt.buyerDecision === "rejected" ? "alt-row-rejected" : "alt-row-eligible"}>
-                <td>#{alt.rank} {alt.name}</td>
-                <td>{alt.price_eur !== null ? formatEur(alt.price_eur) : "—"}</td>
-                <td>{alt.availability_status.replace(/_/g, " ")}</td>
-                <td>
-                  <Pill status={alt.buyerDecision === "rejected" ? "rejected" : "passed"}>{alt.buyerDecision}</Pill>
-                </td>
-              </tr>
-              <tr className="alt-detail-row">
-                <td colSpan={4}>
-                  <span className="alt-sku">SKU {alt.product_id}</span>
-                  {" · allergen codes: "}
-                  {alt.allergens.length > 0 ? alt.allergens.map((a) => a.code).join(", ") : "none disclosed"}
-                  {" — "}
-                  {alt.buyerReason}
-                </td>
-              </tr>
-            </Fragment>
-          ))}
-        </tbody>
-      </table>
+      {result.originalFacts && <OriginalFactsRow facts={result.originalFacts} />}
+      <div className="table-scroll">
+        <table className="alt-table">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Price</th>
+              <th>Stock</th>
+              <th>Recipe match</th>
+              <th>CO₂e / kg</th>
+              <th>Reliability</th>
+              <th>Buyer decision</th>
+            </tr>
+          </thead>
+          <tbody>
+            {result.alternatives.map((alt: AlternativeReview) => (
+              <Fragment key={alt.product_id}>
+                <tr className={alt.buyerDecision === "rejected" ? "alt-row-rejected" : alt.buyerDecision === "selected" ? "alt-row-selected" : "alt-row-eligible"}>
+                  <td>
+                    #{alt.rank} {alt.name}
+                  </td>
+                  <td>{alt.price_eur !== null ? formatEur(alt.price_eur) : "—"}</td>
+                  <td>{alt.availability_status.replace(/_/g, " ")}</td>
+                  <td>
+                    {alt.recipe.verdict === "unverified" ? "unverified" : `${alt.recipe.score ?? "—"}/100`}
+                    {alt.recipe.verdict === "breaks_recipe" && <div className="cell-sub cell-bad">breaks recipe</div>}
+                  </td>
+                  <td>
+                    {fmtNum(alt.facts.carbon_footprint_kg_co2e_per_kg)}
+                    {alt.carbonDeltaPct !== null && alt.carbonDeltaPct !== 0 && (
+                      <div className={`cell-sub ${alt.carbonDeltaPct > 0 ? "cell-bad" : "cell-good"}`}>
+                        {alt.carbonDeltaPct > 0 ? "+" : ""}
+                        {alt.carbonDeltaPct} %
+                      </div>
+                    )}
+                  </td>
+                  <td>{fmtPct(alt.facts.delivery_reliability)}</td>
+                  <td>
+                    <Pill status={alt.buyerDecision === "rejected" ? "rejected" : alt.buyerDecision === "selected" ? "complete" : "passed"}>{alt.buyerDecision}</Pill>
+                  </td>
+                </tr>
+                <tr className="alt-detail-row">
+                  <td colSpan={7}>
+                    <div className="alt-detail-inner">
+                    <span className="alt-sku">SKU {alt.product_id}</span>
+                    {" · allergen codes contained: "}
+                    {alt.allergens.filter((a) => a.relation === "CONTAINS").map((a) => a.code).join(", ") || "none disclosed"}
+                    <ul className="check-list">
+                      {alt.checks.map((c) => (
+                        <li key={c.check}>
+                          <Pill status={CHECK_STATUS[c.status]}>{CHECK_LABEL[c.check]}</Pill>
+                          <span>{c.detail}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    </div>
+                  </td>
+                </tr>
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {result.alternativesRanking && (
+        <p className="mock-note" style={{ marginTop: 10 }}>
+          <strong>Aimo's ranking:</strong> {result.alternativesRanking} <strong>Buyer's pick:</strong> the closest recipe match among
+          options that pass every check, then lower carbon.
+        </p>
+      )}
       {singleRejected && (
         <p className="mock-note" style={{ marginTop: 10 }}>
-          <strong>Buyer agent decision:</strong> the alternative violates this kitchen's allergen policy. No order placed.
+          <strong>Buyer agent decision:</strong> the only alternative fails this kitchen's policy (see the failed checks above). No order placed.
         </p>
       )}
     </div>
@@ -582,6 +723,7 @@ function TransactionWorkspace({ result }: { result: ScenarioResult }) {
       <ApprovalSequence result={result} />
       <PolicyPanels result={result} />
       <DeliveryDateCard result={result} />
+      <SustainabilityCard result={result} />
       <AlternativesTable result={result} />
       <BasketOutcome result={result} />
       <GovernanceCheckCard result={result} />
@@ -627,12 +769,12 @@ function ProductExplorer() {
     }
   }
 
-  async function runCustom() {
+  async function runCustom(mode: "order" | "substitutes") {
     if (!selected) return;
     setRunning(true);
     setCustomResult(null);
     try {
-      const res = await fetch("/api/custom-quote", {
+      const res = await fetch(mode === "order" ? "/api/custom-quote" : "/api/substitutes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ productId: selected.envelope.claim.product_id, qty })
@@ -649,7 +791,8 @@ function ProductExplorer() {
       <h2 style={{ marginTop: 0 }}>Test AIMO BRAIN with any product</h2>
       <p className="explorer-lede">
         Search the live Junction26 product catalogue — 17,546 real SKUs — and watch the AI purchasing workflow make its
-        decisions: the exact same quote → buyer policy → order pipeline as the four scenarios above, nothing special-cased.
+        decisions: the exact same quote → buyer policy → order pipeline as the scenarios above, nothing special-cased. Or ask for its
+        registered substitutes and see which ones keep the recipe working.
       </p>
       <div className="explorer-chips">
         {EXAMPLE_SEARCHES.map((ex) => (
@@ -683,6 +826,8 @@ function ProductExplorer() {
                     {r.envelope.claim.availability.status.replace(/_/g, " ")}
                   </Pill>
                   {containsCodes.length > 0 && <span>allergens: {containsCodes.join(", ")}</span>}
+                  {r.carbon_footprint_kg_co2e_per_kg !== null && <span>{fmtNum(Number(r.carbon_footprint_kg_co2e_per_kg))} kg CO₂e/kg</span>}
+                  {r.delivery_reliability !== null && <span>{fmtPct(Number(r.delivery_reliability))} on-time</span>}
                 </div>
               </button>
             );
@@ -704,8 +849,11 @@ function ProductExplorer() {
                 onChange={(e) => setQty(Math.max(1, Number(e.target.value)))}
               />
             </label>
-            <button className="run-btn" onClick={runCustom} disabled={running}>
+            <button className="run-btn" onClick={() => runCustom("order")} disabled={running}>
               {running ? "Running…" : "Run through the agent"}
+            </button>
+            <button className="run-btn run-btn-secondary" onClick={() => runCustom("substitutes")} disabled={running}>
+              Find recipe-safe substitutes
             </button>
           </div>
         </div>
@@ -770,7 +918,7 @@ export default function Page() {
             <RoleIcon name="buyer" />
           </span>
           <div className="role-title">Buyer AI</div>
-          <div className="role-desc">Buyer rules — budget, allergens and delivery constraints.</div>
+          <div className="role-desc">Buyer rules — budget, allergens, delivery dates, recipe chemistry and carbon limits.</div>
           <span className="role-tag">Buyer-controlled</span>
         </div>
         <div className="role-card">
@@ -778,7 +926,7 @@ export default function Page() {
             <RoleIcon name="aimo" />
           </span>
           <div className="role-title">Aimo AI</div>
-          <div className="role-desc">Supplier rules — credit limits and commercial approvals.</div>
+          <div className="role-desc">Supplier rules — credit limits and approvals. Discloses carbon footprint and delivery reliability.</div>
           <span className="role-tag">Supplier-controlled</span>
         </div>
         <div className="role-card">

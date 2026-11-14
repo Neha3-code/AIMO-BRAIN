@@ -12,6 +12,21 @@ export interface CatalogProduct {
   delivery_reliability: number | null;
 }
 
+function toNumberOrNull(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Postgres NUMERIC columns come back from the Neon driver as strings; the contract promises numbers. */
+function normalize(row: any): CatalogProduct {
+  return {
+    ...row,
+    carbon_footprint_kg_co2e_per_kg: toNumberOrNull(row.carbon_footprint_kg_co2e_per_kg),
+    delivery_reliability: toNumberOrNull(row.delivery_reliability)
+  };
+}
+
 export async function findCatalogCandidates(opts: {
   queryText?: string;
   category?: string;
@@ -38,7 +53,7 @@ export async function findCatalogCandidates(opts: {
      FROM products ${where} ORDER BY id LIMIT $${params.length}`,
     params
   );
-  return rows;
+  return rows.map(normalize);
 }
 
 export async function getCatalogProduct(id: string): Promise<CatalogProduct | null> {
@@ -47,7 +62,7 @@ export async function getCatalogProduct(id: string): Promise<CatalogProduct | nu
      FROM products WHERE id = $1`,
     [id]
   );
-  return rows[0] ?? null;
+  return rows[0] ? normalize(rows[0]) : null;
 }
 
 export async function getCatalogProducts(ids: string[]): Promise<CatalogProduct[]> {
@@ -57,5 +72,5 @@ export async function getCatalogProducts(ids: string[]): Promise<CatalogProduct[
      FROM products WHERE id = ANY($1)`,
     [ids]
   );
-  return rows;
+  return rows.map(normalize);
 }

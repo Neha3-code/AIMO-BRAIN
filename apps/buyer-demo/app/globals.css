@@ -1108,3 +1108,146 @@ details.tech-evidence summary {
 .tech-evidence-body {
   margin-top: 8px;
 }
+
+/* ---- carbon, delivery reliability, recipe chemistry ---- */
+
+.scenario-grid > .scenario-card:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+.run-btn-secondary {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 720px) {
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.metric {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.metric-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.metric-value {
+  font-size: 22px;
+  font-weight: 800;
+  margin: 4px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.original-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 10px;
+}
+
+.original-facts strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-scroll .alt-table {
+  min-width: 640px;
+}
+
+.alt-table td {
+  font-variant-numeric: tabular-nums;
+}
+
+.alt-table tr.alt-row-selected td:first-child {
+  box-shadow: inset 3px 0 0 var(--green);
+}
+
+.cell-sub {
+  font-size: 10.5px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+.cell-bad {
+  color: var(--red);
+}
+
+.cell-good {
+  color: var(--green);
+}
+
+.check-list {
+  list-style: none;
+  margin: 8px 0 2px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.check-list li {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  align-items: start;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.check-list li .pill {
+  justify-self: start;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .check-list li {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+}
+
+/* Keep each substitute's check details readable on narrow screens: the numeric columns
+   scroll sideways, the explanation text stays pinned to the visible width. */
+.alt-detail-inner {
+  position: sticky;
+  left: 0;
+  max-width: min(1000px, calc(100vw - 140px));
+}
+
+@media (max-width: 720px) {
+  .policy-grid {
+    grid-template-columns: 1fr;
+  }
+}

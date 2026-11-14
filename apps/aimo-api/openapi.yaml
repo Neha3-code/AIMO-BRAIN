@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Valio Aimo Trusted Trade Interface
-  version: 1.0.0
+  version: 1.1.0
   description: >
     The interface Valio Aimo exposes so an authorized, external purchasing
     agent can look up products, get a binding quote, place an order, and
@@ -55,6 +55,28 @@ components:
           properties:
             status: { type: string, enum: [mock_verified] }
             reference_id: { type: string }
+    RecipeComposition:
+      type: object
+      description: Declared nutritional composition per 100 g (or 100 ml), from the product's GS1/Synkka data. Any value may be null.
+      properties:
+        fat_g: { type: number, nullable: true }
+        protein_g: { type: number, nullable: true }
+        carbohydrate_g: { type: number, nullable: true }
+        sugar_g: { type: number, nullable: true }
+        salt_g: { type: number, nullable: true }
+        lactose_g: { type: number, nullable: true }
+    ProductFacts:
+      type: object
+      description: >
+        Static facts disclosed on every quote line and alternative. Disclosed,
+        never used by Aimo to filter — what counts as too much carbon or a
+        broken recipe is the buyer's decision.
+      properties:
+        category: { type: string, nullable: true }
+        carbon_footprint_kg_co2e_per_kg: { type: number, nullable: true, description: Average kg CO2-eq per kg of product }
+        delivery_reliability: { type: number, nullable: true, description: "Historical share of deliveries delivered as promised (0–1); null = no history" }
+        net_weight_kg_per_sales_unit: { type: number, nullable: true }
+        composition: { $ref: "#/components/schemas/RecipeComposition" }
 paths:
   /v1/products:
     get:
@@ -71,7 +93,27 @@ paths:
           schema: { type: number }
       responses:
         "200":
-          description: Catalog facts plus a live trust envelope per result
+          description: Catalog facts (incl. carbon footprint, delivery reliability, composition) plus a live trust envelope per result
+  /v1/products/{id}/substitutes:
+    get:
+      summary: A product's registered substitutes, ranked and fully disclosed, ahead of any stock-out
+      description: >
+        Lets a buyer agent pre-qualify a backup (e.g. on recipe chemistry)
+        before the original runs out. Ranked by Aimo's own commercial
+        attributes only: available first, then historical delivery
+        reliability, then price. Every alternative carries allergens and
+        ProductFacts.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: requested_date
+          schema: { type: string, format: date }
+      responses:
+        "200": { description: "Original product facts + trust envelope, ranked alternatives, and the ranking basis" }
+        "404": { description: Unknown product }
   /v1/quote:
     post:
       summary: Request a locked, expiring, immutable offer
@@ -93,7 +135,10 @@ paths:
                       qty: { type: number }
       responses:
         "200":
-          description: Quote with ranked alternatives when a line is unavailable
+          description: >
+            Quote. Every line carries `facts` (ProductFacts). Unavailable lines
+            carry ranked alternatives (available first, then delivery
+            reliability, then price), each with allergens and `facts`.
   /v1/quote/{id}:
     get:
       summary: Retrieve a previously issued quote and its current status

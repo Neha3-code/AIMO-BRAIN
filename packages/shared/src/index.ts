@@ -32,6 +32,33 @@ export interface ProductPriceClaim {
   };
 }
 
+/** Declared nutritional composition per 100 g (or 100 ml) from the product's own GS1/Synkka
+ *  nutritionalContent — the functional "recipe chemistry" of an ingredient. Any value can be
+ *  null when the product doesn't declare it. */
+export interface RecipeComposition {
+  fat_g: number | null;
+  protein_g: number | null;
+  carbohydrate_g: number | null;
+  sugar_g: number | null;
+  salt_g: number | null;
+  lactose_g: number | null;
+}
+
+/** Static, challenge-supplied facts Aimo discloses on every product, quote line and alternative —
+ *  disclosed, not judged: what counts as "too much carbon" or "breaks my recipe" is the buyer's call. */
+export interface ProductFacts {
+  category: string | null;
+  /** Average kg CO2-eq per kg of product (challenge carbon footprint file). */
+  carbon_footprint_kg_co2e_per_kg: number | null;
+  /** Historical share of deliveries delivered as promised, 0–1 (challenge delivery reliability file).
+   *  null = no delivery history for this SKU. */
+  delivery_reliability: number | null;
+  /** Net weight of one sales unit in kg, from the product's packaging data — lets a buyer turn
+   *  CO2-eq/kg into an order-level footprint. */
+  net_weight_kg_per_sales_unit: number | null;
+  composition: RecipeComposition | null;
+}
+
 export interface ProductLookupResult {
   envelope: TrustEnvelope<ProductPriceClaim>;
   name: string;
@@ -42,6 +69,8 @@ export interface ProductLookupResult {
   carbon_footprint_kg_co2e_per_kg: number | null;
   delivery_reliability: number | null;
   delivery_lead_time_days: number | null;
+  net_weight_kg_per_sales_unit?: number | null;
+  composition?: RecipeComposition | null;
 }
 
 export interface AllergenFact {
@@ -61,6 +90,9 @@ export interface QuoteAlternative {
   availability: ProductPriceClaim["availability"];
   delivery_lead_time_days: number | null;
   allergens: AllergenFact[];
+  /** Carbon, delivery reliability and composition facts — optional only because servers
+   *  older than this contract version don't send them. */
+  facts?: ProductFacts;
   /** The underlying trust-enveloped claim this ranking/price is based on, for display. */
   envelope: TrustEnvelope<ProductPriceClaim>;
 }
@@ -73,8 +105,23 @@ export interface QuoteLine {
   unit_price_eur: number | null;
   line_total_eur: number | null;
   alternatives: QuoteAlternative[];
+  /** How Aimo ordered `alternatives` (its own commercial attributes only). */
+  alternatives_ranking?: string;
+  /** Facts for the requested product itself (see QuoteAlternative.facts). */
+  facts?: ProductFacts;
   /** Trust envelope backing the requested product's own price/availability claim. */
   envelope: TrustEnvelope<ProductPriceClaim>;
+}
+
+/** GET /v1/products/:id/substitutes — the product's registered substitutes, disclosed ahead of
+ *  any stock-out so a buyer agent can pre-qualify a backup. */
+export interface SubstitutesResponse {
+  product_id: string;
+  name: string;
+  facts: ProductFacts;
+  envelope: TrustEnvelope<ProductPriceClaim>;
+  alternatives_ranking: string;
+  alternatives: QuoteAlternative[];
 }
 
 export interface Quote {

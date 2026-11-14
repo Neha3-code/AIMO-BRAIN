@@ -1,4 +1,4 @@
-import type { AuditEvent, Order, ProductLookupResult, Quote } from "@aimo/shared";
+import type { AuditEvent, Order, ProductLookupResult, Quote, SubstitutesResponse } from "@aimo/shared";
 
 export interface BuyerProfile {
   id: string;
@@ -43,6 +43,9 @@ export function createAimoClient(config: AimoClientConfig) {
         method: "POST",
         body: JSON.stringify({ buyer_id: buyerId, lines })
       });
+    },
+    getSubstitutes(productId: string) {
+      return request<SubstitutesResponse>(config, `/v1/products/${encodeURIComponent(productId)}/substitutes`);
     },
     getQuote(id: string) {
       return request<Quote>(config, `/v1/quote/${id}`);

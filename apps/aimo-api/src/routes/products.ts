@@ -1,9 +1,11 @@
 import type { FastifyInstance } from "fastify";
-import type { ProductLookupResult } from "@aimo/shared";
-import { findCatalogCandidates } from "../catalog.js";
+import type { ProductLookupResult, SubstitutesResponse } from "@aimo/shared";
+import { findCatalogCandidates, getCatalogProduct } from "../catalog.js";
 import { getUpstreamPrices, getUpstreamAvailability } from "../upstream.js";
 import { buildPriceAvailabilityEnvelope } from "../trustEnvelope.js";
 import { requireBuyerAuth, type AuthedRequest } from "../auth.js";
+import { buildAlternatives, ALTERNATIVES_RANKING } from "../alternatives.js";
+import { productFacts, compositionFor, netWeightKgFor } from "../productFacts.js";
 
 export function registerProductRoutes(app: FastifyInstance) {
   app.get("/v1/products", { preHandler: requireBuyerAuth }, async (request: AuthedRequest, reply) => {
@@ -42,7 +44,9 @@ export function registerProductRoutes(app: FastifyInstance) {
         sustainability_labels: [],
         carbon_footprint_kg_co2e_per_kg: c.carbon_footprint_kg_co2e_per_kg,
         delivery_reliability: c.delivery_reliability,
-        delivery_lead_time_days: null
+        delivery_lead_time_days: null,
+        net_weight_kg_per_sales_unit: netWeightKgFor(c.id),
+        composition: compositionFor(c.id)
       };
     });
 
@@ -52,5 +56,33 @@ export function registerProductRoutes(app: FastifyInstance) {
     }
 
     return reply.send({ results });
+  });
+
+  /** A product's real registered substitutes, ranked and fully disclosed, available ahead of any
+   *  stock-out — so a buyer agent can pre-qualify a recipe-safe backup instead of discovering the
+   *  options for the first time mid-crisis. Same ranking and disclosure as a quote's alternatives. */
+  app.get("/v1/products/:id/substitutes", { preHandler: requireBuyerAuth }, async (request: AuthedRequest, reply) => {
+    const { id } = request.params as { id: string };
+    const q = request.query as { requested_date?: string };
+    const requestedDate = q.requested_date ?? new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+
+    const product = await getCatalogProduct(id);
+    if (!product) return reply.code(404).send({ error: "not_found" });
+
+    const [[price], [avail], alternatives] = await Promise.all([
+      getUpstreamPrices([id], requestedDate, request.buyerId!),
+      getUpstreamAvailability([id], requestedDate, request.buyerId!),
+      buildAlternatives(product.substitutions ?? [], requestedDate, request.buyerId!)
+    ]);
+
+    const body: SubstitutesResponse = {
+      product_id: id,
+      name: product.name_en,
+      facts: productFacts(id, product),
+      envelope: buildPriceAvailabilityEnvelope(id, price, avail),
+      alternatives_ranking: ALTERNATIVES_RANKING,
+      alternatives
+    };
+    return reply.send(body);
   });
 }

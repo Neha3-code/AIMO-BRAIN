@@ -8,7 +8,8 @@
     "start": "tsx src/server.ts",
     "build": "tsc -p tsconfig.json",
     "migrate": "tsx scripts/migrate.ts",
-    "seed": "tsx scripts/seed.ts"
+    "seed": "tsx scripts/seed.ts",
+    "build-facts": "tsx scripts/build-product-facts.ts"
   },
   "dependencies": {
     "@aimo/shared": "0.1.0",
