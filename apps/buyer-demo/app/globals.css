@@ -1863,6 +1863,7 @@ footer .note {
 
 .explorer-item {
   width: 100%;
+  cursor: default;
 }
 
 .explorer-item-price-row {
@@ -1912,6 +1913,21 @@ footer .note {
   border-left: 4px solid var(--red);
   padding: 10px 12px;
   line-height: 1.5;
+}
+
+.explorer-item-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.run-btn-sm {
+  min-height: 38px;
+  padding: 0 14px;
+  font-size: 13px;
+  flex: 1;
+  white-space: nowrap;
 }
 
 /* ---- recommended products ---- */

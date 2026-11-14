@@ -63,11 +63,18 @@ const SCENARIO_CARDS = [
   }
 ];
 
+// Chip terms chosen from real word-frequency counts across the product data file's English names
+// (e.g. "cheese" appears in 446 products, "chicken" in 432, "coffee" in 285, "vegan" in 191) — not
+// guessed, so every chip is guaranteed to return real matches.
 const EXAMPLE_SEARCHES: { label: string; query: string }[] = [
   { label: "Search for lactose-free milk", query: "milk" },
   { label: "Find salmon", query: "salmon" },
   { label: "Search for yoghurt", query: "yoghurt" },
-  { label: "Find wheat bread", query: "wheat bread" }
+  { label: "Find wheat bread", query: "wheat bread" },
+  { label: "Find cheese", query: "cheese" },
+  { label: "Search for chicken", query: "chicken" },
+  { label: "Find coffee", query: "coffee" },
+  { label: "Search for vegan", query: "vegan" }
 ];
 
 /** A curated, separate path from free-text search — guaranteed to demonstrate real
@@ -866,19 +873,30 @@ function bannedAllergenHits(allergens: { code: string; relation: string }[]): st
   return allergens.filter((a) => a.relation === "CONTAINS" && HOTEL_ESPOO_POLICY.bannedAllergenCodes.includes(a.code)).map((a) => a.code);
 }
 
-function ProductCard({ r, isSelected, onSelect }: { r: ProductLookupResult; isSelected: boolean; onSelect: () => void }) {
+function ProductCard({
+  r,
+  isSelected,
+  onSelect,
+  onFindSubstitutes,
+  substitutesLoading
+}: {
+  r: ProductLookupResult;
+  isSelected: boolean;
+  onSelect: () => void;
+  onFindSubstitutes: () => void;
+  substitutesLoading: boolean;
+}) {
   const containsCodes = r.allergens.filter((a) => a.relation === "CONTAINS").map((a) => a.code);
   const bannedHits = bannedAllergenHits(r.allergens);
   const carbon = r.carbon_footprint_kg_co2e_per_kg !== null ? Number(r.carbon_footprint_kg_co2e_per_kg) : null;
   const reliability = r.delivery_reliability !== null ? Number(r.delivery_reliability) : null;
+  const outOfStock = r.envelope.claim.availability.status === "out_of_stock";
   return (
-    <button className={`explorer-item ${isSelected ? "explorer-item-selected" : ""}`} onClick={onSelect} type="button">
+    <div className={`explorer-item ${isSelected ? "explorer-item-selected" : ""}`}>
       <div className="explorer-item-name">{r.name}</div>
       <div className="explorer-item-price-row">
         <span className="explorer-item-price">{r.envelope.claim.price ? formatEur(r.envelope.claim.price.amount) : "price unavailable"}</span>
-        <Pill status={r.envelope.claim.availability.status === "out_of_stock" ? "blocked" : "passed"}>
-          {r.envelope.claim.availability.status.replace(/_/g, " ")}
-        </Pill>
+        <Pill status={outOfStock ? "blocked" : "passed"}>{r.envelope.claim.availability.status.replace(/_/g, " ")}</Pill>
       </div>
       <div className="explorer-item-grid">
         <div className="explorer-metric">
@@ -897,7 +915,15 @@ function ProductCard({ r, isSelected, onSelect }: { r: ProductLookupResult; isSe
       {bannedHits.length > 0 && (
         <div className="explorer-warning">⚠ Contains banned allergen code(s) {bannedHits.join(", ")} — shown for inspection only; this kitchen's policy will block ordering it directly.</div>
       )}
-    </button>
+      <div className="explorer-item-actions">
+        <button type="button" className={outOfStock ? "run-btn run-btn-secondary run-btn-sm" : "run-btn run-btn-sm"} onClick={onSelect}>
+          Select product
+        </button>
+        <button type="button" className={outOfStock ? "run-btn run-btn-sm" : "run-btn run-btn-secondary run-btn-sm"} onClick={onFindSubstitutes} disabled={substitutesLoading}>
+          {substitutesLoading ? "Finding…" : "Find compliant substitutes"}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -910,6 +936,7 @@ function ProductExplorer() {
   const [qty, setQty] = useState(10);
   const [customResult, setCustomResult] = useState<ScenarioResult | { error: string; message?: string } | null>(null);
   const [running, setRunning] = useState(false);
+  const [substitutesLoadingId, setSubstitutesLoadingId] = useState<string | null>(null);
 
   async function runSearch(q: string): Promise<ProductLookupResult[]> {
     setSearching(true);
@@ -949,12 +976,12 @@ function ProductExplorer() {
     setSelected(match);
   }
 
-  async function runCustom(mode: "order" | "substitutes") {
+  async function evaluatePurchase() {
     if (!selected) return;
     setRunning(true);
     setCustomResult(null);
     try {
-      const res = await fetch(mode === "order" ? "/api/custom-quote" : "/api/substitutes", {
+      const res = await fetch("/api/custom-quote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ productId: selected.envelope.claim.product_id, qty })
@@ -963,6 +990,23 @@ function ProductExplorer() {
       setCustomResult(data);
     } finally {
       setRunning(false);
+    }
+  }
+
+  async function findSubstitutesFor(r: ProductLookupResult) {
+    setSelected(r);
+    setSubstitutesLoadingId(r.envelope.claim.product_id);
+    setCustomResult(null);
+    try {
+      const res = await fetch("/api/substitutes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId: r.envelope.claim.product_id })
+      });
+      const data = await res.json();
+      setCustomResult(data);
+    } finally {
+      setSubstitutesLoadingId(null);
     }
   }
 
@@ -1020,6 +1064,8 @@ function ProductExplorer() {
               key={r.envelope.claim.product_id}
               isSelected={selected?.envelope.claim.product_id === r.envelope.claim.product_id}
               onSelect={() => setSelected(r)}
+              onFindSubstitutes={() => findSubstitutesFor(r)}
+              substitutesLoading={substitutesLoadingId === r.envelope.claim.product_id}
             />
           ))}
         </div>
@@ -1045,13 +1091,11 @@ function ProductExplorer() {
                 onChange={(e) => setQty(Math.max(1, Number(e.target.value)))}
               />
             </label>
-            <button className="run-btn" onClick={() => runCustom("order")} disabled={running}>
+            <button className="run-btn" onClick={evaluatePurchase} disabled={running}>
               {running ? "Running…" : "Evaluate purchase with AI"}
             </button>
-            <button className="run-btn run-btn-secondary" onClick={() => runCustom("substitutes")} disabled={running}>
-              Find compliant substitutes
-            </button>
           </div>
+          <p className="mock-note" style={{ marginTop: 8 }}>Checks buyer policy → requests quote → evaluates supplier policy → order decision.</p>
         </div>
       )}
 
