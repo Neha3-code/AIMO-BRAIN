@@ -45,12 +45,18 @@ export interface AlternativeReview {
   price_eur: number | null;
   availability_status: string;
   allergens: AllergenFact[];
-  buyerDecision: "selected" | "eligible" | "rejected";
+  /** "eligible" = passes every check cleanly, no unknowns. "needs_review" = doesn't fail anything,
+   *  but at least one check (typically unknown delivery reliability) can't be confirmed, so the
+   *  agent won't auto-pick it — a human has to sign off. */
+  buyerDecision: "selected" | "eligible" | "needs_review" | "rejected";
   buyerReason: string;
   checks: CheckResult[];
   recipe: RecipeChemistryResult;
   facts: ProductFacts;
   carbonDeltaPct: number | null;
+  carbonOriginal: number | null;
+  carbonSubstitute: number | null;
+  carbonLimitPct: number;
 }
 
 /** Carbon footprint + delivery reliability of the product actually being ordered. */
@@ -160,7 +166,9 @@ function reviewAlternatives(
   const { evaluations, chosen } = evaluateSubstitutes(HOTEL_ESPOO_POLICY, originalFacts, alts);
   const alternatives: AlternativeReview[] = evaluations.map((e) => {
     const failed = e.checks.filter((c) => c.status === "fail");
+    const warned = e.checks.filter((c) => c.status === "warn");
     const isChosen = chosen?.alt.product_id === e.alt.product_id;
+    const buyerDecision: AlternativeReview["buyerDecision"] = isChosen ? "selected" : !e.eligible ? "rejected" : e.autoEligible ? "eligible" : "needs_review";
     return {
       rank: e.alt.rank,
       product_id: e.alt.product_id,
@@ -168,16 +176,22 @@ function reviewAlternatives(
       price_eur: e.alt.price_eur,
       availability_status: e.alt.availability.status,
       allergens: e.alt.allergens,
-      buyerDecision: isChosen ? "selected" : e.eligible ? "eligible" : "rejected",
-      buyerReason: isChosen
-        ? `Selected: passes every check${e.recipe.score !== null ? ` with the closest recipe match (${e.recipe.score}/100)` : ""}.`
-        : e.eligible
-          ? "Passes every check, but a closer recipe match (or lower-carbon option) was available."
-          : failed.map((c) => c.detail).join(" "),
+      buyerDecision,
+      buyerReason:
+        buyerDecision === "selected"
+          ? `Selected: passes every check${e.recipe.score !== null ? ` with the closest recipe match (${e.recipe.score}/100)` : ""}.`
+          : buyerDecision === "eligible"
+            ? "Passes every check, but a closer recipe match (or lower-carbon option) was available."
+            : buyerDecision === "needs_review"
+              ? `Passes known checks, but can't be auto-selected: ${warned.map((c) => c.detail).join(" ")}`
+              : failed.map((c) => c.detail).join(" "),
       checks: e.checks,
       recipe: e.recipe,
       facts: factsOf(e.alt),
-      carbonDeltaPct: e.carbonDeltaPct
+      carbonDeltaPct: e.carbonDeltaPct,
+      carbonOriginal: e.carbon.originalIntensity,
+      carbonSubstitute: e.carbon.substituteIntensity,
+      carbonLimitPct: e.carbon.limitPct
     };
   });
   for (const a of alternatives.filter((x) => x.buyerDecision === "rejected")) {
@@ -579,9 +593,9 @@ export const RECIPE_DEMO_PRODUCT_ID = "464237";
 export async function scenario5RecipeChemistry(client: AimoClient = buildClient(), productId: string = RECIPE_DEMO_PRODUCT_ID): Promise<ScenarioResult> {
   const steps: ScenarioStep[] = [];
   const name = "Recipe-chemistry substitution";
-  const tagline = "Recipe-safe backup";
+  const tagline = "Policy-compliant backup";
 
-  step(steps, "request", "complete", "Buyer request received", `Pre-qualify a recipe-safe backup for product ${productId} before it ever runs out.`);
+  step(steps, "request", "complete", "Buyer request received", `Pre-qualify a policy-compliant backup for product ${productId} before it ever runs out.`);
 
   let subs;
   try {
@@ -612,21 +626,21 @@ export async function scenario5RecipeChemistry(client: AimoClient = buildClient(
   const buyerPolicy: PolicyPanel = chosen
     ? {
         status: "passed",
-        reason: `Backup pre-qualified: ${chosen.product_id} (${chosen.name}) — closest recipe match that also passes this kitchen's allergen, carbon and delivery-reliability rules. ${alternatives.filter((a) => a.buyerDecision === "rejected").length} of ${alternatives.length} registered substitutes rejected.`
+        reason: `Best policy-compliant substitute identified: ${chosen.product_id} (${chosen.name}) — closest nutritional-composition match that also passes this kitchen's allergen, carbon and delivery-reliability rules. These thresholds (recipe tolerance, +${HOTEL_ESPOO_POLICY.maxSubstituteCarbonIncreasePct}% carbon, ${Math.round(HOTEL_ESPOO_POLICY.minDeliveryReliability * 100)}% reliability) are this kitchen's own configured policy, not Aimo's. ${alternatives.filter((a) => a.buyerDecision === "rejected").length} of ${alternatives.length} registered substitutes rejected.`
       }
     : {
         status: "blocked",
-        reason: subs.alternatives.length === 0 ? "No substitutes are registered for this product in the catalog." : "None of the registered substitutes keeps the recipe, carbon and delivery-reliability rules — a human has to choose."
+        reason: subs.alternatives.length === 0 ? "No substitutes are registered for this product in the catalog." : "None of the registered substitutes clears this kitchen's recipe-compatibility, carbon and delivery-reliability rules — a human has to choose."
       };
-  step(steps, "result", chosen ? "complete" : "blocked", "Buyer decision", chosen ? `Backup set to ${chosen.name}.` : "No recipe-safe backup.");
+  step(steps, "result", chosen ? "complete" : "blocked", "Buyer decision", chosen ? `Backup set to ${chosen.name}.` : "No policy-compliant backup.");
 
   return {
     id: "5",
     name,
     tagline,
     outcome: chosen ? "substituted" : "no_viable_alternative",
-    headline: chosen ? `Recipe-safe backup: ${chosen.name}` : "No recipe-safe backup",
-    subheadline: `For ${subs.name} — ${alternatives.filter((a) => a.buyerDecision === "rejected").length} of ${alternatives.length} catalog substitutes rejected on recipe chemistry, carbon or delivery reliability`,
+    headline: chosen ? `Best policy-compliant substitute: ${chosen.name}` : "No policy-compliant substitute",
+    subheadline: `For ${subs.name} — ${alternatives.filter((a) => a.buyerDecision === "rejected").length} of ${alternatives.length} catalog substitutes rejected on recipe compatibility, carbon or delivery reliability`,
     transactionId: null,
     transactionIdKind: null,
     ok: true,

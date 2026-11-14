@@ -2,7 +2,7 @@
 
 import { Fragment, useState } from "react";
 import { formatEur, type AlternativeReview, type Outcome, type ScenarioResult, type StepStatus } from "../lib/scenarios";
-import type { CheckResult } from "../lib/policyEngine";
+import { RELIABILITY_DISCLOSURE_CAVEAT, type CheckResult } from "../lib/policyEngine";
 import type { AuditEvent, ProductFacts, ProductLookupResult, QuoteLine, TrustEnvelope } from "@aimo/shared";
 
 const SCENARIO_CARDS = [
@@ -54,7 +54,7 @@ const SCENARIO_CARDS = [
     icon: "flask" as const,
     title: "Recipe-chemistry substitution",
     description: "Pick a backup that keeps the recipe, carbon and delivery reliability intact.",
-    outcome: "Recipe-safe backup chosen"
+    outcome: "Policy-compliant substitute found"
   }
 ];
 
@@ -319,7 +319,7 @@ function SustainabilityCard({ result }: { result: ScenarioResult }) {
       </div>
       <p className="mock-note" style={{ marginTop: 8 }}>
         {f.note} {s.reliability.detail} Source: the challenge's carbon footprint and delivery reliability files, disclosed by Aimo on every
-        quote line; weight from the product's own packaging data.
+        quote line; weight from the product's own packaging data. {RELIABILITY_DISCLOSURE_CAVEAT}
       </p>
     </div>
   );
@@ -340,6 +340,56 @@ function OriginalFactsRow({ facts }: { facts: ProductFacts }) {
         <strong>Delivery reliability:</strong> {fmtPct(facts.delivery_reliability)}
       </span>
     </div>
+  );
+}
+
+function CarbonRejectionCallout({ alt }: { alt: AlternativeReview }) {
+  if (alt.carbonOriginal === null || alt.carbonSubstitute === null || alt.carbonDeltaPct === null) return null;
+  return (
+    <div className="carbon-callout">
+      <div className="carbon-callout-title">Why {alt.name} was rejected on carbon</div>
+      <div className="carbon-callout-grid">
+        <div>
+          <div className="metric-label">Original carbon intensity</div>
+          <div className="metric-value">{fmtNum(alt.carbonOriginal)} kg CO₂e/kg</div>
+        </div>
+        <div>
+          <div className="metric-label">Alternative carbon intensity</div>
+          <div className="metric-value">{fmtNum(alt.carbonSubstitute)} kg CO₂e/kg</div>
+        </div>
+        <div>
+          <div className="metric-label">Increase</div>
+          <div className="metric-value cell-bad">+{alt.carbonDeltaPct} %</div>
+        </div>
+        <div>
+          <div className="metric-label">Maximum permitted increase</div>
+          <div className="metric-value">+{alt.carbonLimitPct} %</div>
+        </div>
+      </div>
+      <p className="mock-note" style={{ marginTop: 8 }}>
+        Rejected by buyer policy — this kitchen's own configured threshold, not Aimo's.
+        {alt.recipe.verdict === "breaks_recipe" && " This alternative also breaks the recipe's composition tolerance, an independent reason on its own."}
+      </p>
+    </div>
+  );
+}
+
+function RecipeMethodologyNote() {
+  return (
+    <details className="raw">
+      <summary>How recipe compatibility is calculated</summary>
+      <ul className="methodology-list">
+        <li>Compares the original and substitute's declared nutritional composition (fat, protein, carbohydrate, sugar, salt — per 100 g).</li>
+        <li>Measures the difference on each of those five components.</li>
+        <li>Checks each difference against this kitchen's configured tolerance (an absolute gram figure or a % of the original, whichever is larger).</li>
+        <li>Separately checks whether a lactose-free original would stop being lactose-free.</li>
+        <li>Rejects the substitute if any component exceeds tolerance, or if it breaks a lactose-free requirement.</li>
+      </ul>
+      <p className="mock-note">
+        This is a nutritional-composition compatibility check against the product's own declared data — not a guarantee that the
+        substitute will taste, cook or behave identically in a real recipe.
+      </p>
+    </details>
   );
 }
 
@@ -389,7 +439,17 @@ function AlternativesTable({ result }: { result: ScenarioResult }) {
           <tbody>
             {result.alternatives.map((alt: AlternativeReview) => (
               <Fragment key={alt.product_id}>
-                <tr className={alt.buyerDecision === "rejected" ? "alt-row-rejected" : alt.buyerDecision === "selected" ? "alt-row-selected" : "alt-row-eligible"}>
+                <tr
+                  className={
+                    alt.buyerDecision === "rejected"
+                      ? "alt-row-rejected"
+                      : alt.buyerDecision === "selected"
+                        ? "alt-row-selected"
+                        : alt.buyerDecision === "needs_review"
+                          ? "alt-row-review"
+                          : "alt-row-eligible"
+                  }
+                >
                   <td>
                     #{alt.rank} {alt.name}
                   </td>
@@ -410,9 +470,22 @@ function AlternativesTable({ result }: { result: ScenarioResult }) {
                   </td>
                   <td>{fmtPct(alt.facts.delivery_reliability)}</td>
                   <td>
-                    <Pill status={alt.buyerDecision === "rejected" ? "rejected" : alt.buyerDecision === "selected" ? "complete" : "passed"}>{alt.buyerDecision}</Pill>
+                    <Pill
+                      status={
+                        alt.buyerDecision === "rejected" ? "rejected" : alt.buyerDecision === "selected" ? "complete" : alt.buyerDecision === "needs_review" ? "pending" : "passed"
+                      }
+                    >
+                      {alt.buyerDecision === "needs_review" ? "manual review" : alt.buyerDecision.replace(/_/g, " ")}
+                    </Pill>
                   </td>
                 </tr>
+                {alt.buyerDecision === "rejected" && alt.carbonOriginal !== null && alt.carbonSubstitute !== null && alt.carbonDeltaPct !== null && alt.carbonDeltaPct > alt.carbonLimitPct && (
+                  <tr className="alt-detail-row">
+                    <td colSpan={7}>
+                      <CarbonRejectionCallout alt={alt} />
+                    </td>
+                  </tr>
+                )}
                 <tr className="alt-detail-row">
                   <td colSpan={7}>
                     <div className="alt-detail-inner">
@@ -446,6 +519,8 @@ function AlternativesTable({ result }: { result: ScenarioResult }) {
           <strong>Buyer agent decision:</strong> the only alternative fails this kitchen's policy (see the failed checks above). No order placed.
         </p>
       )}
+      <p className="mock-note" style={{ marginTop: 10 }}>{RELIABILITY_DISCLOSURE_CAVEAT}</p>
+      <RecipeMethodologyNote />
     </div>
   );
 }
@@ -853,7 +928,7 @@ function ProductExplorer() {
               {running ? "Running…" : "Run through the agent"}
             </button>
             <button className="run-btn run-btn-secondary" onClick={() => runCustom("substitutes")} disabled={running}>
-              Find recipe-safe substitutes
+              Find policy-compliant substitutes
             </button>
           </div>
         </div>

@@ -1194,6 +1194,10 @@ details.tech-evidence summary {
   box-shadow: inset 3px 0 0 var(--green);
 }
 
+.alt-table tr.alt-row-review td:first-child {
+  box-shadow: inset 3px 0 0 var(--amber);
+}
+
 .cell-sub {
   font-size: 10.5px;
   font-weight: 700;
@@ -1206,6 +1210,45 @@ details.tech-evidence summary {
 
 .cell-good {
   color: var(--green);
+}
+
+/* ---- carbon rejection callout ---- */
+
+.carbon-callout {
+  background: var(--red-dim);
+  border: 1px solid #5c2130;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 6px 0;
+}
+
+.carbon-callout-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--red);
+  margin-bottom: 8px;
+}
+
+.carbon-callout-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+@media (max-width: 720px) {
+  .carbon-callout-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ---- recipe methodology note ---- */
+
+.methodology-list {
+  margin: 8px 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
 }
 
 .check-list {

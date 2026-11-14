@@ -224,26 +224,41 @@ export interface CheckResult {
   detail: string;
 }
 
-export function checkSubstituteCarbon(policy: KitchenPolicy, original: number | null, substitute: number | null): CheckResult & { deltaPct: number | null } {
+export interface CarbonCheckResult extends CheckResult {
+  check: "carbon";
+  deltaPct: number | null;
+  originalIntensity: number | null;
+  substituteIntensity: number | null;
+  limitPct: number;
+}
+
+export function checkSubstituteCarbon(policy: KitchenPolicy, original: number | null, substitute: number | null): CarbonCheckResult {
+  const limitPct = policy.maxSubstituteCarbonIncreasePct;
   if (substitute === null) {
-    return { check: "carbon", status: "warn", deltaPct: null, detail: "No carbon footprint disclosed for this substitute — can't confirm it isn't a regression." };
+    return { check: "carbon", status: "warn", deltaPct: null, originalIntensity: original, substituteIntensity: null, limitPct, detail: "No carbon footprint disclosed for this substitute — can't confirm it isn't a regression." };
   }
   if (original === null) {
-    return { check: "carbon", status: "pass", deltaPct: null, detail: `${substitute} kg CO2-eq/kg (original has no disclosed figure to compare against).` };
+    return { check: "carbon", status: "pass", deltaPct: null, originalIntensity: null, substituteIntensity: substitute, limitPct, detail: `${substitute} kg CO2-eq/kg (original has no disclosed figure to compare against).` };
   }
   const deltaPct = Math.round(((substitute - original) / original) * 100);
-  if (deltaPct > policy.maxSubstituteCarbonIncreasePct) {
+  if (deltaPct > limitPct) {
     return {
       check: "carbon",
       status: "fail",
       deltaPct,
-      detail: `${original} → ${substitute} kg CO2-eq/kg (+${deltaPct} %) exceeds this kitchen's +${policy.maxSubstituteCarbonIncreasePct} % limit for substitutes.`
+      originalIntensity: original,
+      substituteIntensity: substitute,
+      limitPct,
+      detail: `${original} → ${substitute} kg CO2-eq/kg (+${deltaPct} %) exceeds this kitchen's +${limitPct} % limit for substitutes.`
     };
   }
   return {
     check: "carbon",
     status: "pass",
     deltaPct,
+    originalIntensity: original,
+    substituteIntensity: substitute,
+    limitPct,
     detail: deltaPct === 0 ? `Same carbon intensity (${substitute} kg CO2-eq/kg).` : `${original} → ${substitute} kg CO2-eq/kg (${deltaPct > 0 ? "+" : ""}${deltaPct} %).`
   };
 }
@@ -252,10 +267,16 @@ export function checkSubstituteCarbon(policy: KitchenPolicy, original: number | 
 // Delivery reliability
 // ---------------------------------------------------------------------------
 
+/** The challenge's delivery-reliability file discloses a single aggregate on-time ratio per SKU —
+ *  no delivery count or measurement period. Say that plainly rather than implying more precision
+ *  than the data actually has. */
+export const RELIABILITY_DISCLOSURE_CAVEAT =
+  "This is Valio Aimo's challenge-supplied aggregate on-time-delivery ratio for the SKU; the dataset doesn't disclose the underlying delivery count or measurement period.";
+
 export function checkReliability(policy: KitchenPolicy, reliability: number | null): CheckResult {
   const min = `${Math.round(policy.minDeliveryReliability * 100)} %`;
   if (reliability === null) {
-    return { check: "reliability", status: "warn", detail: "No delivery history for this SKU — reliability unknown." };
+    return { check: "reliability", status: "warn", detail: "No delivery history disclosed for this SKU — reliability unknown, so it can't be auto-selected on its own; a human can still choose it." };
   }
   const pct = `${Math.round(reliability * 1000) / 10} %`;
   if (reliability < policy.minDeliveryReliability) {
@@ -270,9 +291,13 @@ export function checkReliability(policy: KitchenPolicy, reliability: number | nu
 
 export interface SubstituteEvaluation {
   alt: QuoteAlternative;
+  /** Doesn't fail any check — shown as a real option, but may still need a human (see autoEligible). */
   eligible: boolean;
+  /** Passes every check cleanly, no unknowns — the only tier the agent will pick automatically. */
+  autoEligible: boolean;
   checks: CheckResult[];
   recipe: RecipeChemistryResult;
+  carbon: CarbonCheckResult;
   carbonDeltaPct: number | null;
 }
 
@@ -326,12 +351,20 @@ export function evaluateSubstitutes(
 
       checks.push(checkReliability(policy, facts.delivery_reliability));
 
-      return { alt, eligible: checks.every((c) => c.status !== "fail"), checks, recipe, carbonDeltaPct: carbon.deltaPct };
+      return {
+        alt,
+        eligible: checks.every((c) => c.status !== "fail"),
+        autoEligible: checks.every((c) => c.status === "pass"),
+        checks,
+        recipe,
+        carbon,
+        carbonDeltaPct: carbon.deltaPct
+      };
     });
 
   const chosen =
     [...evaluations]
-      .filter((e) => e.eligible)
+      .filter((e) => e.autoEligible)
       .sort((a, b) => {
         const sa = a.recipe.score ?? -1;
         const sb = b.recipe.score ?? -1;
