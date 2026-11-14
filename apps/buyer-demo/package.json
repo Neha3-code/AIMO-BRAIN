@@ -7,7 +7,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "demo": "tsx scripts/demo.ts"
+    "demo": "tsx scripts/demo.ts",
+    "llm:smoke": "tsx scripts/llm-smoke.ts",
+    "build:catalog-index": "tsx scripts/build-catalog-index.ts"
   },
   "dependencies": {
     "@aimo/shared": "0.1.0",

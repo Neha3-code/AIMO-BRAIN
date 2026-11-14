@@ -4,6 +4,8 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { formatEur, type AlternativeReview, type Outcome, type ScenarioResult, type StepStatus } from "../lib/scenarios";
 import { HOTEL_ESPOO_POLICY, RELIABILITY_DISCLOSURE_CAVEAT, type CheckResult } from "../lib/policyEngine";
 import type { AuditEvent, ProductFacts, ProductLookupResult, QuoteLine, TrustEnvelope } from "@aimo/shared";
+import type { RecipePlan, SeasonalSuggestions } from "../lib/llmCatalog";
+import type { Narration } from "../lib/llmExplain";
 
 const SCENARIO_CARDS = [
   {
@@ -75,6 +77,20 @@ const EXAMPLE_SEARCHES: { label: string; query: string }[] = [
   { label: "Search for chicken", query: "chicken" },
   { label: "Find coffee", query: "coffee" },
   { label: "Search for vegan", query: "vegan" }
+];
+
+/** Natural-language needs that only make sense with AI search — literal name matching finds nothing for these. */
+const AI_EXAMPLE_SEARCHES = [
+  "something creamy and lactose-free for a dessert",
+  "vegan protein for a lunch buffet",
+  "gluten-free bread for the breakfast table",
+  "Finnish fish for a festive starter"
+];
+
+const RECIPE_EXAMPLES = [
+  { dish: "Pan-seared seasonal salmon with creamy dill potatoes", covers: 40 },
+  { dish: "Reindeer sauté with mashed potatoes and lingonberries", covers: 60 },
+  { dish: "Vegan mushroom risotto", covers: 25 }
 ];
 
 /** A curated, separate path from free-text search — guaranteed to demonstrate real
@@ -831,6 +847,103 @@ function QuoteEvidence({ line, requestedDeliveryDate }: { line: QuoteLine; reque
   );
 }
 
+async function postExplain<T>(mode: "narrate" | "audit", result: ScenarioResult): Promise<T> {
+  const res = await fetch("/api/explain", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode, result })
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.message ?? data.error);
+  return data as T;
+}
+
+/** #3 + #4: plain-language outcome note (works for any SKU, not just the curated four) plus a
+ *  per-agent narration generated live from THIS run's real step records. Narration only — it is
+ *  written after the policy engines decided and changes nothing. */
+function AiNarration({ result }: { result: ScenarioResult }) {
+  const [data, setData] = useState<Narration | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setData(null);
+    setError(null);
+    postExplain<Narration>("narrate", result)
+      .then((d) => !cancelled && setData(d))
+      .catch((e) => !cancelled && setError((e as Error).message));
+    return () => {
+      cancelled = true;
+    };
+  }, [result]);
+
+  if (error) return null;
+  return (
+    <div className="ai-panel ai-narration">
+      <div className="ai-panel-head">
+        <AiBadge />
+        <span className="ai-panel-title">What just happened</span>
+      </div>
+      {!data ? (
+        <p className="mock-note">
+          <span className="explorer-spinner" aria-hidden="true" /> Narrating this run from its real API responses…
+        </p>
+      ) : (
+        <>
+          <p className="ai-panel-lede">
+            <strong>{data.note}</strong>
+          </p>
+          {data.narration.length > 0 && (
+            <ol className="agent-chain">
+              {data.narration.map((n, i) => (
+                <li key={i} className="agent-step">
+                  <span className="agent-name">{n.agent}</span>
+                  <span>{n.text}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+          <p className="mock-note" style={{ marginTop: 8 }}>
+            Generated live by Nemotron from this run's recorded steps — narration only; the decisions above were made by the policy engines.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** #5: "Explain this decision" — one plain-language paragraph from the raw audit log. */
+function ExplainDecision({ result }: { result: ScenarioResult }) {
+  const [text, setText] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function explain() {
+    setLoading(true);
+    setError(null);
+    try {
+      setText((await postExplain<{ explanation: string }>("audit", result)).explanation);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  return (
+    <div className="explain-decision">
+      {!text && (
+        <button type="button" className="run-btn run-btn-secondary run-btn-sm" onClick={explain} disabled={loading}>
+          {loading ? "Explaining…" : "✦ Explain this decision"}
+        </button>
+      )}
+      {error && <p className="mock-note explorer-error">{error}</p>}
+      {text && (
+        <p className="ai-explanation">
+          <AiBadge /> {text}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function TechnicalEvidence({ result }: { result: ScenarioResult }) {
   const line = result.quote?.lines.find((l) => l.requested_product_id === result.quote?.lines[0].requested_product_id);
   const showQuoteLine = result.id === "1" || result.id === "2";
@@ -873,6 +986,7 @@ function TechnicalEvidence({ result }: { result: ScenarioResult }) {
         {result.audit.length > 0 && (
           <div className="detail-card">
             <h4>Audit events</h4>
+            <ExplainDecision result={result} />
             <div className="audit-list">
               {result.audit.map((e: AuditEvent, i: number) => (
                 <div className="audit-item" key={i}>
@@ -896,6 +1010,7 @@ function TransactionWorkspace({ result }: { result: ScenarioResult }) {
   return (
     <div className="workspace">
       <Hero result={result} />
+      <AiNarration result={result} />
       <ApprovalSequence result={result} />
       <PolicyPanels result={result} />
       <DeliveryDateCard result={result} />
@@ -921,9 +1036,11 @@ function ProductCard({
   onSelect,
   onFindSubstitutes,
   substitutesLoading,
-  knownNoSubstitutes
+  knownNoSubstitutes,
+  aiReason
 }: {
   r: ProductLookupResult;
+  aiReason?: string;
   isSelected: boolean;
   onSelect: () => void;
   onFindSubstitutes: () => void;
@@ -942,6 +1059,7 @@ function ProductCard({
   return (
     <div className={`explorer-item ${isSelected ? "explorer-item-selected" : ""}`}>
       <div className="explorer-item-name">{r.name}</div>
+      {aiReason && <div className="ai-reason">✦ {aiReason}</div>}
       <div className="explorer-item-price-row">
         <span className="explorer-item-price">{r.envelope.claim.price ? formatEur(r.envelope.claim.price.amount) : "price unavailable"}</span>
         <Pill status={outOfStock ? "blocked" : "passed"}>{r.envelope.claim.availability.status.replace(/_/g, " ")}</Pill>
@@ -990,10 +1108,224 @@ function ProductCard({
   );
 }
 
+function StockTag({ r }: { r: ProductLookupResult }) {
+  const status = r.envelope.claim.availability.status;
+  return <Pill status={status === "out_of_stock" ? "blocked" : "passed"}>{status.replace(/_/g, " ")}</Pill>;
+}
+
+function AiBadge() {
+  return <span className="ai-badge">✦ Aimo AI · Nemotron</span>;
+}
+
+/** Proactive, suggest-only selling: seasonal themes grounded in real catalog SKUs with live price/stock. */
+function SeasonalSuggestionsCard({ onPick }: { onPick: (r: ProductLookupResult) => void }) {
+  const [data, setData] = useState<SeasonalSuggestions | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/seasonal")
+      .then((res) => res.json())
+      .then((d) => !cancelled && (d.error ? setError(d.message ?? d.error) : setData(d)))
+      .catch((e) => !cancelled && setError((e as Error).message));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <div className="ai-panel">
+      <div className="ai-panel-head">
+        <AiBadge />
+        <span className="ai-panel-title">In season now</span>
+      </div>
+      {!data && !error && (
+        <p className="mock-note">
+          <span className="explorer-spinner" aria-hidden="true" /> Checking what's seasonal in Finland this week against the live catalog…
+        </p>
+      )}
+      {error && <p className="mock-note">Seasonal suggestions unavailable: {error}</p>}
+      {data && (
+        <>
+          <p className="ai-panel-lede">{data.season}</p>
+          <div className="seasonal-grid">
+            {data.themes.map((t) => (
+              <div className="seasonal-theme" key={t.title}>
+                <div className="seasonal-theme-title">{t.title}</div>
+                <p className="seasonal-pitch">{t.pitch}</p>
+                {t.products.map((r) => (
+                  <button type="button" className="seasonal-product" key={r.envelope.claim.product_id} onClick={() => onPick(r)}>
+                    <span className="seasonal-product-name">{r.name}</span>
+                    <span className="seasonal-product-meta">
+                      {r.envelope.claim.price ? formatEur(r.envelope.claim.price.amount) : "—"} <StockTag r={r} />
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+          <p className="mock-note" style={{ marginTop: 10 }}>
+            Suggest-only: Aimo AI proposes, nothing is quoted or ordered until you pick a product and it passes the same buyer and supplier
+            policy checks as any other order. Prices and stock are live from aimo-api.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** need → recipe → order lines. The LLM plans ingredients and picks real SKUs; each line is then
+ *  evaluated through the unchanged quote → policy pipeline. */
+function RecipePlanner({ onPickLine }: { onPickLine: (r: ProductLookupResult, units: number) => void }) {
+  const [dish, setDish] = useState("");
+  const [covers, setCovers] = useState(40);
+  const [loading, setLoading] = useState(false);
+  const [plan, setPlan] = useState<RecipePlan | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(d = dish, c = covers) {
+    if (!d.trim()) return;
+    setDish(d);
+    setCovers(c);
+    setLoading(true);
+    setError(null);
+    setPlan(null);
+    try {
+      const res = await fetch("/api/recipe-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dish: d, covers: c })
+      });
+      const data = await res.json();
+      if (data.error) setError(data.message ?? data.error);
+      else setPlan(data);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const priced = plan?.lines.filter((l) => l.product?.envelope.claim.price) ?? [];
+  const estTotal = priced.reduce((sum, l) => sum + l.product!.envelope.claim.price!.amount * l.order_units, 0);
+
+  return (
+    <div className="ai-panel" id="recipe-planner">
+      <div className="ai-panel-head">
+        <AiBadge />
+        <span className="ai-panel-title">Plan an order from a dish</span>
+      </div>
+      <p className="ai-panel-lede">
+        Describe what the chef is cooking. Aimo AI turns it into ingredients, finds real SKUs in the 17,546-product catalog and sizes each
+        line to your covers.
+      </p>
+      <div className="explorer-chips">
+        {RECIPE_EXAMPLES.map((ex) => (
+          <button key={ex.dish} type="button" className="explorer-chip" onClick={() => run(ex.dish, ex.covers)}>
+            {ex.dish} · {ex.covers} covers
+          </button>
+        ))}
+      </div>
+      <form
+        className="explorer-search"
+        onSubmit={(e) => {
+          e.preventDefault();
+          run();
+        }}
+      >
+        <input className="explorer-input" value={dish} onChange={(e) => setDish(e.target.value)} placeholder="e.g. Christmas ham with rosolli for the staff party" />
+        <input
+          className="explorer-input recipe-covers"
+          type="number"
+          min={1}
+          max={500}
+          value={covers}
+          onChange={(e) => setCovers(Math.max(1, Number(e.target.value)))}
+          aria-label="Covers"
+          title="Covers (portions)"
+        />
+        <button className="run-btn" type="submit" disabled={loading}>
+          {loading ? "Planning…" : "Plan order"}
+        </button>
+      </form>
+      {loading && (
+        <p className="mock-note">
+          <span className="explorer-spinner" aria-hidden="true" /> Planning ingredients, matching catalog SKUs and fetching live prices…
+        </p>
+      )}
+      {error && <p className="mock-note explorer-error">{error}</p>}
+      {plan && (
+        <>
+          <p className="ai-panel-lede">
+            <strong>{plan.covers} covers:</strong> {plan.summary}
+          </p>
+          <div className="recipe-table-wrap">
+            <table className="recipe-table">
+              <thead>
+                <tr>
+                  <th>Ingredient</th>
+                  <th>Catalog product</th>
+                  <th>Units</th>
+                  <th>Line est.</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {plan.lines.map((l, i) => (
+                  <tr key={i}>
+                    <td>
+                      <div className="recipe-ingredient">
+                        {l.ingredient} {l.role === "core" && <span className="recipe-core">core</span>}
+                      </div>
+                      <div className="recipe-sub">need {l.quantity_needed}</div>
+                    </td>
+                    <td>
+                      {l.product ? (
+                        <>
+                          <div>{l.product.name}</div>
+                          <div className="recipe-sub">
+                            {l.product.envelope.claim.price ? `${formatEur(l.product.envelope.claim.price.amount)} / unit` : "price unavailable"}{" "}
+                            <StockTag r={l.product} />
+                          </div>
+                        </>
+                      ) : (
+                        <span className="recipe-sub">—</span>
+                      )}
+                      <div className="recipe-sub">
+                        {l.units_basis === "catalog_weight" ? "📏 " : "≈ "}
+                        {l.note}
+                      </div>
+                    </td>
+                    <td>{l.product ? l.order_units : "—"}</td>
+                    <td>{l.product?.envelope.claim.price ? formatEur(l.product.envelope.claim.price.amount * l.order_units) : "—"}</td>
+                    <td>
+                      {l.product && (
+                        <button type="button" className="run-btn run-btn-sm" onClick={() => onPickLine(l.product!, l.order_units)}>
+                          Evaluate line
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mock-note" style={{ marginTop: 10 }}>
+            Estimated basket {formatEur(estTotal)} across {priced.length} priced line{priced.length === 1 ? "" : "s"} — list prices, not a quote.
+            📏 = units computed from the catalog's net weight; ≈ = AI estimate from the pack size in the name. Each line still goes through
+            the binding quote, allergen, carbon and approval checks when you evaluate it.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 function ProductExplorer() {
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState<ProductLookupResult[] | null>(null);
+  const [searchResults, setSearchResults] = useState<(ProductLookupResult & { ai_reason?: string })[] | null>(null);
+  const [aiMode, setAiMode] = useState(true);
+  const [searchMeta, setSearchMeta] = useState<{ mode: "ai" | "keyword"; interpretation?: string; ai_error?: string } | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [selected, setSelected] = useState<ProductLookupResult | null>(null);
   const [qty, setQty] = useState(10);
@@ -1027,24 +1359,27 @@ function ProductExplorer() {
       ? "Finding and evaluating registered substitutes…"
       : null;
 
-  function selectProduct(r: ProductLookupResult) {
+  function selectProduct(r: ProductLookupResult, units?: number) {
     setSelected(r);
+    if (units !== undefined) setQty(units);
     setCustomResult(null);
     scrollTo("selected");
   }
 
-  async function runSearch(q: string): Promise<ProductLookupResult[]> {
+  async function runSearch(q: string, ai = aiMode): Promise<ProductLookupResult[]> {
     setSearching(true);
     setSearchError(null);
+    setSearchMeta(null);
     setSelected(null);
     setCustomResult(null);
     try {
       const res = await fetch("/api/search-products", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q })
+        body: JSON.stringify({ query: q, ai })
       });
       const data = await res.json();
+      setSearchMeta(data.mode ? { mode: data.mode, interpretation: data.interpretation, ai_error: data.ai_error } : null);
       if (data.error) {
         setSearchError(data.message ?? data.error);
         setSearchResults([]);
@@ -1057,17 +1392,17 @@ function ProductExplorer() {
     }
   }
 
-  async function search(e?: React.FormEvent, overrideQuery?: string) {
+  async function search(e?: React.FormEvent, overrideQuery?: string, ai = aiMode) {
     e?.preventDefault();
     const q = overrideQuery ?? query;
     if (overrideQuery !== undefined) setQuery(overrideQuery);
-    await runSearch(q);
+    await runSearch(q, ai);
     scrollTo("results");
   }
 
   async function selectRecommended(item: (typeof RECOMMENDED_PRODUCTS)[number]) {
     setQuery(item.query);
-    const results = await runSearch(item.query);
+    const results = await runSearch(item.query, false);
     const match = results.find((r) => r.envelope.claim.product_id === item.id) ?? results[0] ?? null;
     setSelected(match);
     if (match) scrollTo("selected");
@@ -1130,6 +1465,8 @@ function ProductExplorer() {
         decisions: the exact same quote → buyer policy → order pipeline as the scenarios above, nothing special-cased.
       </p>
 
+      <SeasonalSuggestionsCard onPick={(r) => selectProduct(r)} />
+
       <div className="section-title" style={{ margin: "0 0 10px" }}>
         Recommended products to try
       </div>
@@ -1151,22 +1488,39 @@ function ProductExplorer() {
       </div>
       <div className="explorer-chips">
         {EXAMPLE_SEARCHES.map((ex) => (
-          <button key={ex.label} type="button" className="explorer-chip" onClick={() => search(undefined, ex.query)}>
+          <button key={ex.label} type="button" className="explorer-chip" onClick={() => search(undefined, ex.query, false)}>
             {ex.label}
           </button>
         ))}
       </div>
+      <div className="explorer-chips">
+        {AI_EXAMPLE_SEARCHES.map((q) => (
+          <button key={q} type="button" className="explorer-chip explorer-chip-ai" onClick={() => { setAiMode(true); search(undefined, q, true); }}>
+            ✦ {q}
+          </button>
+        ))}
+      </div>
       <form className="explorer-search" onSubmit={search}>
-        <input className="explorer-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="e.g. cheese, salmon, yoghurt…" />
+        <input className="explorer-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={aiMode ? "Describe what you need, e.g. something creamy and lactose-free for a dessert" : "e.g. cheese, salmon, yoghurt…"} />
         <button className="run-btn" type="submit" disabled={searching}>
-          {searching ? "Searching…" : "Search catalog"}
+          {searching ? (aiMode ? "Thinking…" : "Searching…") : "Search catalog"}
         </button>
       </form>
+      <label className="ai-toggle">
+        <input type="checkbox" checked={aiMode} onChange={(e) => setAiMode(e.target.checked)} /> AI search — understands needs, not just
+        product names (NVIDIA Nemotron via Verda). Off = literal name match.
+      </label>
 
       {searchError && <p className="mock-note explorer-error">{searchError}</p>}
 
       {searchResults && (
         <div className="explorer-results scroll-anchor" ref={resultsRef}>
+          {searchMeta?.mode === "ai" && searchMeta.interpretation && (
+            <p className="ai-interpretation">
+              <AiBadge /> {searchMeta.interpretation}
+            </p>
+          )}
+          {searchMeta?.ai_error && <p className="mock-note">AI search unavailable ({searchMeta.ai_error}) — showing literal name matches instead.</p>}
           {searchResults.length === 0 && <p className="mock-note">No matches in the catalog for that search.</p>}
           {searchResults.map((r) => (
             <ProductCard
@@ -1177,10 +1531,13 @@ function ProductExplorer() {
               onFindSubstitutes={() => findSubstitutesFor(r)}
               substitutesLoading={substitutesLoadingId === r.envelope.claim.product_id}
               knownNoSubstitutes={noSubstituteIds.has(r.envelope.claim.product_id)}
+              aiReason={r.ai_reason}
             />
           ))}
         </div>
       )}
+
+      <RecipePlanner onPickLine={(r, units) => selectProduct(r, units)} />
 
       {selected && (
         <div className="detail-card scroll-anchor" ref={selectedRef}>
