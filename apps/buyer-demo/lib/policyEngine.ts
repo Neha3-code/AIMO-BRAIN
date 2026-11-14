@@ -14,12 +14,14 @@ import { POLICY_VERSION_BUYER } from "@aimo/shared";
 export interface KitchenPolicy {
   bannedAllergenCodes: string[]; // codes this kitchen's menu must never contain
   maxBudgetEur: number | null; // null = no local cap, defer to Aimo-side credit check
+  maxDeliveryDeviationDays: number; // how many days later than requested this kitchen will still accept
 }
 
 export const HOTEL_ESPOO_POLICY: KitchenPolicy = {
   // AW = tree nuts (this kitchen's own internal translation of the GS1 code).
   bannedAllergenCodes: ["AW"],
-  maxBudgetEur: null
+  maxBudgetEur: null,
+  maxDeliveryDeviationDays: 1
 };
 
 export interface PolicyDecision {
@@ -63,6 +65,48 @@ export function pickAllowedAlternative(policy: KitchenPolicy, alternatives: Quot
     return { chosen: alt, rejected };
   }
   return { chosen: null, rejected };
+}
+
+export interface DeliveryDateDecision {
+  allowed: boolean;
+  deviationDays: number | null;
+  reason: string;
+  policyVersion: string;
+}
+
+/** Evaluates the supplier's confirmed delivery date against what the buyer actually requested —
+ *  a real policy check, not narrative: an order only proceeds if the deviation is within this
+ *  kitchen's own tolerance, exactly like the allergen and budget checks above. */
+export function checkDeliveryDate(policy: KitchenPolicy, requestedDate: string, confirmedDate: string | null): DeliveryDateDecision {
+  if (confirmedDate === null) {
+    return {
+      allowed: true,
+      deviationDays: null,
+      reason: "Supplier returned no confirmed delivery date for this line — nothing to evaluate yet.",
+      policyVersion: POLICY_VERSION_BUYER
+    };
+  }
+
+  const deviationDays = Math.round((new Date(confirmedDate).getTime() - new Date(requestedDate).getTime()) / 86400000);
+
+  if (deviationDays <= policy.maxDeliveryDeviationDays) {
+    return {
+      allowed: true,
+      deviationDays,
+      reason:
+        deviationDays <= 0
+          ? `Supplier confirmed delivery on or before the requested date (${requestedDate}).`
+          : `Supplier confirmed delivery ${deviationDays} day(s) later than requested (${requestedDate} → ${confirmedDate}) — within this kitchen's ${policy.maxDeliveryDeviationDays}-day tolerance.`,
+      policyVersion: POLICY_VERSION_BUYER
+    };
+  }
+
+  return {
+    allowed: false,
+    deviationDays,
+    reason: `Supplier confirmed delivery ${deviationDays} day(s) later than requested (${requestedDate} → ${confirmedDate}) — exceeds this kitchen's ${policy.maxDeliveryDeviationDays}-day tolerance.`,
+    policyVersion: POLICY_VERSION_BUYER
+  };
 }
 
 export function checkBudget(policy: KitchenPolicy, totalEur: number): PolicyDecision {

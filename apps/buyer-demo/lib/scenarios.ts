@@ -1,5 +1,5 @@
 import { createAimoClient, type AimoClient } from "./aimoClient";
-import { HOTEL_ESPOO_POLICY, checkCompliance, pickAllowedAlternative } from "./policyEngine";
+import { HOTEL_ESPOO_POLICY, checkCompliance, checkDeliveryDate, pickAllowedAlternative, type DeliveryDateDecision } from "./policyEngine";
 import type { AllergenFact, AuditEvent, Order, Quote, QuoteLine } from "@aimo/shared";
 
 export type Stage = "request" | "quote" | "buyer_policy" | "aimo_policy" | "approval" | "order" | "audit" | "result";
@@ -57,7 +57,9 @@ export interface ScenarioResult {
   requestedProduct?: { id: string; name: string };
   alternatives?: AlternativeReview[];
   alternativesNote?: string;
+  buyerBannedAllergenCodes?: string[];
   eligibleLineValueEur?: number;
+  deliveryDateDecision?: DeliveryDateDecision & { requestedDate: string; confirmedDate: string | null };
   /** The one or two quote lines actually relevant to this scenario's narrative, when the
    *  full quote (e.g. scenario 3/4's multi-candidate probe) contains unrelated noise lines. */
   relevantLines?: QuoteLine[];
@@ -65,6 +67,10 @@ export interface ScenarioResult {
 
 function step(steps: ScenarioStep[], stage: Stage, status: StepStatus, title: string, detail: string, data?: unknown) {
   steps.push({ stage, status, title, detail, data });
+}
+
+export function formatEur(amount: number): string {
+  return `€${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export function buildClient(): AimoClient {
@@ -97,18 +103,36 @@ export async function scenario1Autonomous(client: AimoClient = buildClient()): P
     "quote",
     "complete",
     "Quote obtained",
-    `€${quote.total_eur.toFixed(2)} for 1,000 L of ${line.requested_product_name}, requested for delivery ${quote.requested_delivery_date}.`,
+    `${formatEur(quote.total_eur)} for 1,000 L of ${line.requested_product_name}, requested for delivery ${quote.requested_delivery_date}.`,
     quote
   );
 
   const compliance = checkCompliance(HOTEL_ESPOO_POLICY, quote.lines);
+  const deliveryDecision = checkDeliveryDate(HOTEL_ESPOO_POLICY, quote.requested_delivery_date, line.envelope.claim.availability.confirmed_available_date);
+  step(
+    steps,
+    "buyer_policy",
+    deliveryDecision.allowed ? "passed" : "blocked",
+    "Delivery date evaluation",
+    deliveryDecision.reason
+  );
+
+  const allowed = compliance.allowed && deliveryDecision.allowed;
   const buyerPolicy: PolicyPanel = {
-    status: compliance.allowed ? "passed" : "blocked",
-    reason: compliance.allowed ? "No allergen or budget violations against this kitchen's own policy." : compliance.reasons.join(" ")
+    status: allowed ? "passed" : "blocked",
+    reason: allowed
+      ? "No allergen, budget or delivery-date violations against this kitchen's own policy."
+      : [...compliance.reasons, !deliveryDecision.allowed ? deliveryDecision.reason : null].filter(Boolean).join(" ")
   };
   step(steps, "buyer_policy", buyerPolicy.status, "Buyer policy check", buyerPolicy.status === "passed" ? "Passed." : "Blocked.");
 
-  if (!compliance.allowed) {
+  const deliveryDateDecision = {
+    ...deliveryDecision,
+    requestedDate: quote.requested_delivery_date,
+    confirmedDate: line.envelope.claim.availability.confirmed_available_date
+  };
+
+  if (!allowed) {
     return {
       id: "1",
       name,
@@ -124,7 +148,8 @@ export async function scenario1Autonomous(client: AimoClient = buildClient()): P
       aimoPolicy: null,
       quote,
       order: null,
-      audit: []
+      audit: [],
+      deliveryDateDecision
     };
   }
 
@@ -143,7 +168,7 @@ export async function scenario1Autonomous(client: AimoClient = buildClient()): P
     name,
     tagline,
     outcome: "confirmed_auto",
-    headline: `€${quote.total_eur.toFixed(2)}`,
+    headline: `${formatEur(quote.total_eur)}`,
     subheadline: `1,000 L of ${line.requested_product_name}`,
     transactionId: order.order_id,
     transactionIdKind: "order",
@@ -153,7 +178,8 @@ export async function scenario1Autonomous(client: AimoClient = buildClient()): P
     aimoPolicy,
     quote,
     order,
-    audit
+    audit,
+    deliveryDateDecision
   };
 }
 
@@ -167,15 +193,28 @@ export async function scenario2TwoSidedApproval(client: AimoClient = buildClient
 
   const quote = await client.requestQuote(BUYER_ID, [{ product_id: "464073", qty: 4520 }]);
   const line = quote.lines[0];
-  step(steps, "quote", "complete", "Quote obtained", `€${quote.total_eur.toFixed(2)} for 4,520 L of ${line.requested_product_name}.`, quote);
+  step(steps, "quote", "complete", "Quote obtained", `${formatEur(quote.total_eur)} for 4,520 L of ${line.requested_product_name}.`, quote);
 
   const compliance = checkCompliance(HOTEL_ESPOO_POLICY, quote.lines);
+  const deliveryDecision = checkDeliveryDate(HOTEL_ESPOO_POLICY, quote.requested_delivery_date, line.envelope.claim.availability.confirmed_available_date);
+  step(steps, "buyer_policy", deliveryDecision.allowed ? "passed" : "blocked", "Delivery date evaluation", deliveryDecision.reason);
+
+  const allowed = compliance.allowed && deliveryDecision.allowed;
   const buyerPolicy: PolicyPanel = {
-    status: compliance.allowed ? "passed" : "blocked",
-    reason: compliance.allowed ? "Buyer policy clears the product selection — no opinion on Aimo's commercial risk." : compliance.reasons.join(" ")
+    status: allowed ? "passed" : "blocked",
+    reason: allowed
+      ? "Buyer policy clears the product selection and delivery date — no opinion on Aimo's commercial risk."
+      : [...compliance.reasons, !deliveryDecision.allowed ? deliveryDecision.reason : null].filter(Boolean).join(" ")
   };
   step(steps, "buyer_policy", buyerPolicy.status, "Buyer policy check", buyerPolicy.status === "passed" ? "Passed." : "Blocked.");
-  if (!compliance.allowed) {
+
+  const deliveryDateDecision = {
+    ...deliveryDecision,
+    requestedDate: quote.requested_delivery_date,
+    confirmedDate: line.envelope.claim.availability.confirmed_available_date
+  };
+
+  if (!allowed) {
     return {
       id: "2",
       name,
@@ -191,7 +230,8 @@ export async function scenario2TwoSidedApproval(client: AimoClient = buildClient
       aimoPolicy: null,
       quote,
       order: null,
-      audit: []
+      audit: [],
+      deliveryDateDecision
     };
   }
 
@@ -230,7 +270,7 @@ export async function scenario2TwoSidedApproval(client: AimoClient = buildClient
     name,
     tagline,
     outcome: held ? "confirmed_after_approval" : "confirmed_auto",
-    headline: `€${quote.total_eur.toFixed(2)}`,
+    headline: `${formatEur(quote.total_eur)}`,
     subheadline: "Large replenishment order",
     transactionId: order.order_id,
     transactionIdKind: "order",
@@ -241,7 +281,8 @@ export async function scenario2TwoSidedApproval(client: AimoClient = buildClient
     quote,
     order,
     audit,
-    governanceCheck
+    governanceCheck,
+    deliveryDateDecision
   };
 }
 
@@ -342,7 +383,8 @@ export async function scenario3StockOutSubstitution(client: AimoClient = buildCl
     audit: [],
     requestedProduct: { id: unavailable.requested_product_id, name: unavailable.requested_product_name },
     alternatives,
-    alternativesNote
+    alternativesNote,
+    buyerBannedAllergenCodes: HOTEL_ESPOO_POLICY.bannedAllergenCodes
   };
 }
 

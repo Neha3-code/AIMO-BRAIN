@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useState } from "react";
-import type { AlternativeReview, Outcome, ScenarioResult, ScenarioStep, StepStatus } from "../lib/scenarios";
+import { formatEur, type AlternativeReview, type Outcome, type ScenarioResult, type ScenarioStep, type StepStatus } from "../lib/scenarios";
 import type { AuditEvent, QuoteLine, TrustEnvelope } from "@aimo/shared";
 
 const SCENARIO_CARDS = [
@@ -88,9 +88,10 @@ function quantityUnitFor(productId: string): string {
 /** The real upstream backend uses a sentinel value (observed as high as 9,999,999,999)
  *  to mean "effectively unlimited" rather than a literal unit count. Never show that
  *  number to a user as if it were real inventory. */
-function formatStockQuantity(quantity: number | null): string {
-  if (quantity === null) return "not disclosed";
-  if (quantity >= 999999) return "quantity not capped in sandbox";
+function formatStockQuantity(status: string, quantity: number | null): string {
+  const inStock = status === "in_stock" || status === "available";
+  if (quantity === null) return inStock ? "In stock — quantity not disclosed" : "not disclosed";
+  if (quantity >= 999999) return "In stock — sandbox quantity not capped";
   return `${quantity.toLocaleString()} units`;
 }
 
@@ -104,8 +105,8 @@ function Hero({ result }: { result: ScenarioResult }) {
   return (
     <div className={`hero hero-${meta.tone}`}>
       <div className="hero-top">
+        <span className="hero-scenario-name">{result.name}</span>
         <span className={`hero-label hero-label-${meta.tone}`}>{meta.label}</span>
-        <span className="scenario-index">{result.name}</span>
       </div>
       <div className="hero-headline">{result.headline}</div>
       <div className="hero-sub">{result.subheadline}</div>
@@ -121,13 +122,15 @@ function PolicyPanels({ result }: { result: ScenarioResult }) {
   if (!result.buyerPolicy && !result.aimoPolicy) return null;
   return (
     <div className="policy-grid">
-      <div className="policy-card">
-        <div className="policy-owner">Buyer policy — buyer-side decision</div>
+      <div className="policy-card policy-card-buyer">
+        <div className="policy-owner">Buyer-owned policy</div>
+        <div className="policy-sub">Decides what the buyer is willing to purchase</div>
         {result.buyerPolicy ? <Pill status={result.buyerPolicy.status}>{result.buyerPolicy.status.replace(/_/g, " ")}</Pill> : <Pill status="info">not evaluated</Pill>}
         <div className="policy-reason">{result.buyerPolicy?.reason ?? "No buyer-side check ran for this path."}</div>
       </div>
-      <div className="policy-card">
-        <div className="policy-owner">Aimo policy — supplier-side decision</div>
+      <div className="policy-card policy-card-aimo">
+        <div className="policy-owner">Supplier-owned policy</div>
+        <div className="policy-sub">Decides what Aimo is willing to sell, and on what terms</div>
         {result.aimoPolicy ? <Pill status={result.aimoPolicy.status}>{result.aimoPolicy.status.replace(/_/g, " ")}</Pill> : <Pill status="info">no opinion</Pill>}
         <div className="policy-reason">{result.aimoPolicy?.reason ?? "Aimo's guardrail has no opinion on buyer-side allergen/budget rules."}</div>
       </div>
@@ -135,12 +138,38 @@ function PolicyPanels({ result }: { result: ScenarioResult }) {
   );
 }
 
+function DeliveryDateCard({ result }: { result: ScenarioResult }) {
+  const d = result.deliveryDateDecision;
+  if (!d) return null;
+  return (
+    <div className="detail-card">
+      <h4>Delivery date evaluation — buyer-owned policy</h4>
+      <div className="kv-row">
+        <span className="k">Requested</span>
+        <span className="v">{d.requestedDate}</span>
+      </div>
+      <div className="kv-row">
+        <span className="k">Supplier confirmed</span>
+        <span className="v">{d.confirmedDate ?? "not confirmed"}</span>
+      </div>
+      <div className="kv-row">
+        <span className="k">Policy outcome</span>
+        <span className="v">
+          <Pill status={d.allowed ? "passed" : "blocked"}>{d.allowed ? "Within tolerance" : "Exceeds tolerance"}</Pill>
+        </span>
+      </div>
+      <p className="mock-note" style={{ marginTop: 8 }}>{d.reason}</p>
+    </div>
+  );
+}
+
 function AlternativesTable({ result }: { result: ScenarioResult }) {
   if (!result.alternatives || !result.requestedProduct) return null;
   const single = result.alternatives.length === 1;
+  const singleRejected = single && result.alternatives[0].buyerDecision === "rejected";
   return (
     <div className="detail-card">
-      <h4>{single ? "Actual substitute returned by Aimo" : "Requested vs. disclosed alternatives"}</h4>
+      <h4>{singleRejected ? "Substitution rejected" : single ? "Actual substitute returned by Aimo" : "Requested vs. disclosed alternatives"}</h4>
       <div className="kv-row">
         <span className="k">Requested, unavailable</span>
         <span className="v">
@@ -148,6 +177,12 @@ function AlternativesTable({ result }: { result: ScenarioResult }) {
         </span>
       </div>
       {result.alternativesNote && <p className="mock-note">{result.alternativesNote}</p>}
+      {result.buyerBannedAllergenCodes && (
+        <div className="kv-row">
+          <span className="k">This kitchen's banned allergen codes</span>
+          <span className="v">{result.buyerBannedAllergenCodes.join(", ")}</span>
+        </div>
+      )}
       <table className="alt-table">
         <thead>
           <tr>
@@ -162,7 +197,7 @@ function AlternativesTable({ result }: { result: ScenarioResult }) {
             <Fragment key={alt.product_id}>
               <tr className={alt.buyerDecision === "rejected" ? "alt-row-rejected" : "alt-row-eligible"}>
                 <td>#{alt.rank} {alt.name}</td>
-                <td>{alt.price_eur !== null ? `€${alt.price_eur.toFixed(2)}` : "—"}</td>
+                <td>{alt.price_eur !== null ? formatEur(alt.price_eur) : "—"}</td>
                 <td>{alt.availability_status.replace(/_/g, " ")}</td>
                 <td>
                   <Pill status={alt.buyerDecision === "rejected" ? "rejected" : "passed"}>{alt.buyerDecision}</Pill>
@@ -181,6 +216,11 @@ function AlternativesTable({ result }: { result: ScenarioResult }) {
           ))}
         </tbody>
       </table>
+      {singleRejected && (
+        <p className="mock-note" style={{ marginTop: 10 }}>
+          <strong>Buyer agent decision:</strong> the alternative violates this kitchen's allergen policy. No order placed.
+        </p>
+      )}
     </div>
   );
 }
@@ -210,7 +250,7 @@ function BasketOutcome({ result }: { result: ScenarioResult }) {
               <Pill status={eligible ? "passed" : "blocked"}>{eligible ? "Eligible" : "Unavailable"}</Pill>
               <div className="basket-line-meta">
                 {line.requested_qty.toLocaleString()} {unit}
-                {line.line_total_eur !== null && ` · €${line.line_total_eur.toFixed(2)}`}
+                {line.line_total_eur !== null && ` · ${formatEur(line.line_total_eur)}`}
               </div>
               {!eligible && <div className="basket-line-note">Substitution required — would follow the same disclosure flow as scenario 3.</div>}
             </div>
@@ -220,7 +260,7 @@ function BasketOutcome({ result }: { result: ScenarioResult }) {
       {result.eligibleLineValueEur !== undefined && (
         <div className="kv-row" style={{ marginTop: 10, fontWeight: 700 }}>
           <span className="k">Eligible line value</span>
-          <span className="v">€{result.eligibleLineValueEur.toFixed(2)}</span>
+          <span className="v">{formatEur(result.eligibleLineValueEur)}</span>
         </div>
       )}
       <p className="mock-note" style={{ marginTop: 8 }}>
@@ -246,11 +286,11 @@ function ApprovalDetail({ result }: { result: ScenarioResult }) {
       </div>
       <div className="kv-row">
         <span className="k">Requested amount</span>
-        <span className="v">€{order.approval.requested_amount_eur?.toFixed(2)}</span>
+        <span className="v">{order.approval.requested_amount_eur !== null ? formatEur(order.approval.requested_amount_eur) : "—"}</span>
       </div>
       <div className="kv-row">
         <span className="k">Approved amount</span>
-        <span className="v">{order.approval.approved_amount_eur !== null ? `€${order.approval.approved_amount_eur.toFixed(2)}` : "pending"}</span>
+        <span className="v">{order.approval.approved_amount_eur !== null ? formatEur(order.approval.approved_amount_eur) : "pending"}</span>
       </div>
     </div>
   );
@@ -335,7 +375,7 @@ function EnvelopeSummary({ envelope }: { envelope: TrustEnvelope<any> }) {
 
 function QuoteEvidence({ line, requestedDeliveryDate }: { line: QuoteLine; requestedDeliveryDate: string }) {
   const unit = quantityUnitFor(line.requested_product_id);
-  const stockQty = formatStockQuantity(line.envelope.claim.availability.quantity);
+  const stockQty = formatStockQuantity(line.envelope.claim.availability.status, line.envelope.claim.availability.quantity);
   const confirmedDate = line.envelope.claim.availability.confirmed_available_date;
   const datesMatch = confirmedDate === requestedDeliveryDate;
   return (
@@ -364,21 +404,21 @@ function QuoteEvidence({ line, requestedDeliveryDate }: { line: QuoteLine; reque
       {line.unit_price_eur !== null && (
         <div className="kv-row">
           <span className="k">Supplier price</span>
-          <span className="v">€{line.unit_price_eur.toFixed(2)} per sales unit</span>
+          <span className="v">{formatEur(line.unit_price_eur)} per sales unit</span>
         </div>
       )}
       {line.unit_price_eur !== null && unit !== "units" && (
         <div className="kv-row">
           <span className="k">Displayed as</span>
           <span className="v">
-            €{line.unit_price_eur.toFixed(2)} / {unit} <span style={{ opacity: 0.6 }}>(this SKU's sales unit is 1 {unit})</span>
+            {formatEur(line.unit_price_eur)} / {unit} <span style={{ opacity: 0.6 }}>(this SKU's sales unit is 1 {unit})</span>
           </span>
         </div>
       )}
       {line.line_total_eur !== null && (
         <div className="kv-row">
           <span className="k">Line total</span>
-          <span className="v">€{line.line_total_eur.toFixed(2)}</span>
+          <span className="v">{formatEur(line.line_total_eur)}</span>
         </div>
       )}
       <div className="kv-row">
@@ -457,6 +497,7 @@ function TransactionWorkspace({ result }: { result: ScenarioResult }) {
       <Hero result={result} />
       <ApprovalSequence result={result} />
       <PolicyPanels result={result} />
+      <DeliveryDateCard result={result} />
       <AlternativesTable result={result} />
       <BasketOutcome result={result} />
       <GovernanceCheckCard result={result} />
