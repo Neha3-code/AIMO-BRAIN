@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { formatEur, type AlternativeReview, type Outcome, type ScenarioResult, type StepStatus } from "../lib/scenarios";
 import { HOTEL_ESPOO_POLICY, RELIABILITY_DISCLOSURE_CAVEAT, type CheckResult } from "../lib/policyEngine";
 import type { AuditEvent, ProductFacts, ProductLookupResult, QuoteLine, TrustEnvelope } from "@aimo/shared";
@@ -437,18 +437,143 @@ function NoRegisteredSubstitutes({ result }: { result: ScenarioResult }) {
   if (!result.noRegisteredSubstitutes || !result.requestedProduct) return null;
   return (
     <div className="detail-card">
-      <h4>No registered substitutes found</h4>
+      <h4>{result.requestedProductOutOfStock ? "Out of stock — no registered substitutes" : "No registered substitutes found"}</h4>
       <div className="kv-row">
         <span className="k">Original product</span>
         <span className="v">
           {result.requestedProduct.name} ({result.requestedProduct.id})
         </span>
       </div>
+      {result.requestedProductOutOfStock && (
+        <div className="kv-row">
+          <span className="k">Stock</span>
+          <span className="v">
+            <Pill status="blocked">out of stock</Pill>
+          </span>
+        </div>
+      )}
       <p className="mock-note" style={{ marginTop: 8 }}>
-        Aimo's catalogue has no registered substitutes for this product. No alternatives were available for the buyer agent to
-        evaluate. No substitute was selected and no order was placed.
+        {result.requestedProductOutOfStock ? "This product is out of stock, so it can't be ordered right now. " : ""}
+        Aimo's catalogue has no registered substitutes for this product (only about 1% of the 17,546 SKUs have any), so the
+        buyer agent had nothing it may substitute automatically. No substitute was selected and no order was placed.
+        {result.categorySuggestions && result.categorySuggestions.length > 0 && " Same-category suggestions for a human to review are shown below."}
       </p>
       <Pill status="info">no substitute available</Pill>
+    </div>
+  );
+}
+
+/** One row (plus check details) per evaluated option — shared by registered substitutes and
+ *  same-category suggestions so both are judged and shown identically. */
+function AlternativeReviewTable({ alternatives }: { alternatives: AlternativeReview[] }) {
+  return (
+  <div className="table-scroll">
+    <table className="alt-table">
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Price</th>
+          <th>Stock</th>
+          <th>Recipe match</th>
+          <th>CO₂e / kg</th>
+          <th>Reliability</th>
+          <th>Buyer decision</th>
+        </tr>
+      </thead>
+      <tbody>
+        {alternatives.map((alt: AlternativeReview) => (
+          <Fragment key={alt.product_id}>
+            <tr
+              className={
+                alt.buyerDecision === "rejected"
+                  ? "alt-row-rejected"
+                  : alt.buyerDecision === "selected"
+                    ? "alt-row-selected"
+                    : alt.buyerDecision === "needs_review"
+                      ? "alt-row-review"
+                      : "alt-row-eligible"
+              }
+            >
+              <td>
+                #{alt.rank} {alt.name}
+              </td>
+              <td>{alt.price_eur !== null ? formatEur(alt.price_eur) : "—"}</td>
+              <td>{alt.availability_status.replace(/_/g, " ")}</td>
+              <td>
+                {alt.recipe.verdict === "unverified" ? "unverified" : `${alt.recipe.score ?? "—"}/100`}
+                {alt.recipe.verdict === "breaks_recipe" && <div className="cell-sub cell-bad">breaks recipe</div>}
+              </td>
+              <td>
+                {fmtNum(alt.facts.carbon_footprint_kg_co2e_per_kg)}
+                {alt.carbonDeltaPct !== null && alt.carbonDeltaPct !== 0 && (
+                  <div className={`cell-sub ${alt.carbonDeltaPct > 0 ? "cell-bad" : "cell-good"}`}>
+                    {alt.carbonDeltaPct > 0 ? "+" : ""}
+                    {alt.carbonDeltaPct} %
+                  </div>
+                )}
+              </td>
+              <td>{fmtPct(alt.facts.delivery_reliability)}</td>
+              <td>
+                <Pill
+                  status={
+                    alt.buyerDecision === "rejected" ? "rejected" : alt.buyerDecision === "selected" ? "complete" : alt.buyerDecision === "needs_review" ? "pending" : "passed"
+                  }
+                >
+                  {alt.buyerDecision === "needs_review" ? "manual review" : alt.buyerDecision.replace(/_/g, " ")}
+                </Pill>
+              </td>
+            </tr>
+            {alt.buyerDecision === "rejected" && alt.carbonOriginal !== null && alt.carbonSubstitute !== null && alt.carbonDeltaPct !== null && alt.carbonDeltaPct > alt.carbonLimitPct && (
+              <tr className="alt-detail-row">
+                <td colSpan={7}>
+                  <CarbonRejectionCallout alt={alt} />
+                </td>
+              </tr>
+            )}
+            <tr className="alt-detail-row">
+              <td colSpan={7}>
+                <div className="alt-detail-inner">
+                <span className="alt-sku">SKU {alt.product_id}</span>
+                {" · allergen codes contained: "}
+                {alt.allergens.filter((a) => a.relation === "CONTAINS").map((a) => a.code).join(", ") || "none disclosed"}
+                <ul className="check-list">
+                  {alt.checks.map((c) => (
+                    <li key={c.check}>
+                      <Pill status={CHECK_STATUS[c.status]}>{CHECK_LABEL[c.check]}</Pill>
+                      <span>{c.detail}</span>
+                    </li>
+                  ))}
+                </ul>
+                </div>
+              </td>
+            </tr>
+          </Fragment>
+        ))}
+      </tbody>
+    </table>
+  </div>
+  );
+}
+
+function CategorySuggestions({ result }: { result: ScenarioResult }) {
+  if (!result.categorySuggestions || !result.requestedProduct) return null;
+  return (
+    <div className="detail-card">
+      <h4>Same-category suggestions — not registered substitutes</h4>
+      {result.categorySuggestionsNote && <p className="mock-note">{result.categorySuggestionsNote}</p>}
+      {result.categorySuggestions.length === 0 ? (
+        <p className="mock-note">No other product in this category is orderable right now.</p>
+      ) : (
+        <>
+          {result.originalFacts && <OriginalFactsRow facts={result.originalFacts} />}
+          <AlternativeReviewTable alternatives={result.categorySuggestions} />
+          <p className="mock-note" style={{ marginTop: 10 }}>
+            <strong>Order:</strong> products that pass every check first, then the closest recipe match, then lower carbon. Even an
+            &ldquo;eligible&rdquo; suggestion needs a human to confirm it — the buyer agent only auto-substitutes products the catalog registers
+            as substitutes.
+          </p>
+        </>
+      )}
     </div>
   );
 }
@@ -483,91 +608,7 @@ function AlternativesTable({ result }: { result: ScenarioResult }) {
         </div>
       )}
       {result.originalFacts && <OriginalFactsRow facts={result.originalFacts} />}
-      <div className="table-scroll">
-        <table className="alt-table">
-          <thead>
-            <tr>
-              <th>Product</th>
-              <th>Price</th>
-              <th>Stock</th>
-              <th>Recipe match</th>
-              <th>CO₂e / kg</th>
-              <th>Reliability</th>
-              <th>Buyer decision</th>
-            </tr>
-          </thead>
-          <tbody>
-            {result.alternatives.map((alt: AlternativeReview) => (
-              <Fragment key={alt.product_id}>
-                <tr
-                  className={
-                    alt.buyerDecision === "rejected"
-                      ? "alt-row-rejected"
-                      : alt.buyerDecision === "selected"
-                        ? "alt-row-selected"
-                        : alt.buyerDecision === "needs_review"
-                          ? "alt-row-review"
-                          : "alt-row-eligible"
-                  }
-                >
-                  <td>
-                    #{alt.rank} {alt.name}
-                  </td>
-                  <td>{alt.price_eur !== null ? formatEur(alt.price_eur) : "—"}</td>
-                  <td>{alt.availability_status.replace(/_/g, " ")}</td>
-                  <td>
-                    {alt.recipe.verdict === "unverified" ? "unverified" : `${alt.recipe.score ?? "—"}/100`}
-                    {alt.recipe.verdict === "breaks_recipe" && <div className="cell-sub cell-bad">breaks recipe</div>}
-                  </td>
-                  <td>
-                    {fmtNum(alt.facts.carbon_footprint_kg_co2e_per_kg)}
-                    {alt.carbonDeltaPct !== null && alt.carbonDeltaPct !== 0 && (
-                      <div className={`cell-sub ${alt.carbonDeltaPct > 0 ? "cell-bad" : "cell-good"}`}>
-                        {alt.carbonDeltaPct > 0 ? "+" : ""}
-                        {alt.carbonDeltaPct} %
-                      </div>
-                    )}
-                  </td>
-                  <td>{fmtPct(alt.facts.delivery_reliability)}</td>
-                  <td>
-                    <Pill
-                      status={
-                        alt.buyerDecision === "rejected" ? "rejected" : alt.buyerDecision === "selected" ? "complete" : alt.buyerDecision === "needs_review" ? "pending" : "passed"
-                      }
-                    >
-                      {alt.buyerDecision === "needs_review" ? "manual review" : alt.buyerDecision.replace(/_/g, " ")}
-                    </Pill>
-                  </td>
-                </tr>
-                {alt.buyerDecision === "rejected" && alt.carbonOriginal !== null && alt.carbonSubstitute !== null && alt.carbonDeltaPct !== null && alt.carbonDeltaPct > alt.carbonLimitPct && (
-                  <tr className="alt-detail-row">
-                    <td colSpan={7}>
-                      <CarbonRejectionCallout alt={alt} />
-                    </td>
-                  </tr>
-                )}
-                <tr className="alt-detail-row">
-                  <td colSpan={7}>
-                    <div className="alt-detail-inner">
-                    <span className="alt-sku">SKU {alt.product_id}</span>
-                    {" · allergen codes contained: "}
-                    {alt.allergens.filter((a) => a.relation === "CONTAINS").map((a) => a.code).join(", ") || "none disclosed"}
-                    <ul className="check-list">
-                      {alt.checks.map((c) => (
-                        <li key={c.check}>
-                          <Pill status={CHECK_STATUS[c.status]}>{CHECK_LABEL[c.check]}</Pill>
-                          <span>{c.detail}</span>
-                        </li>
-                      ))}
-                    </ul>
-                    </div>
-                  </td>
-                </tr>
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <AlternativeReviewTable alternatives={result.alternatives} />
       {result.alternativesRanking && (
         <p className="mock-note" style={{ marginTop: 10 }}>
           <strong>Aimo's ranking:</strong> {result.alternativesRanking} <strong>Buyer's pick:</strong> the closest recipe match among
@@ -860,6 +901,7 @@ function TransactionWorkspace({ result }: { result: ScenarioResult }) {
       <DeliveryDateCard result={result} />
       <SustainabilityCard result={result} />
       <NoRegisteredSubstitutes result={result} />
+      <CategorySuggestions result={result} />
       <AlternativesTable result={result} />
       <BasketOutcome result={result} />
       <GovernanceCheckCard result={result} />
@@ -891,6 +933,9 @@ function ProductCard({
   const carbon = r.carbon_footprint_kg_co2e_per_kg !== null ? Number(r.carbon_footprint_kg_co2e_per_kg) : null;
   const reliability = r.delivery_reliability !== null ? Number(r.delivery_reliability) : null;
   const outOfStock = r.envelope.claim.availability.status === "out_of_stock";
+  // Undefined when talking to an older aimo-api that doesn't report the count yet — keep the button enabled then.
+  const subCount = r.registered_substitute_count;
+  const noSubs = subCount === 0;
   return (
     <div className={`explorer-item ${isSelected ? "explorer-item-selected" : ""}`}>
       <div className="explorer-item-name">{r.name}</div>
@@ -915,12 +960,27 @@ function ProductCard({
       {bannedHits.length > 0 && (
         <div className="explorer-warning">⚠ Contains banned allergen code(s) {bannedHits.join(", ")} — shown for inspection only; this kitchen's policy will block ordering it directly.</div>
       )}
+      {subCount !== undefined && (
+        <div className="explorer-subs-note">
+          {noSubs
+            ? outOfStock
+              ? "Out of stock and no registered substitutes — same-category products can be suggested instead."
+              : "No registered substitutes in the catalog — same-category products can be suggested instead."
+            : `${subCount} registered substitute${subCount === 1 ? "" : "s"} in the catalog.`}
+        </div>
+      )}
       <div className="explorer-item-actions">
         <button type="button" className={outOfStock ? "run-btn run-btn-secondary run-btn-sm" : "run-btn run-btn-sm"} onClick={onSelect}>
           Select product
         </button>
-        <button type="button" className={outOfStock ? "run-btn run-btn-sm" : "run-btn run-btn-secondary run-btn-sm"} onClick={onFindSubstitutes} disabled={substitutesLoading}>
-          {substitutesLoading ? "Finding…" : "Find compliant substitutes"}
+        <button
+          type="button"
+          className={outOfStock ? "run-btn run-btn-sm" : "run-btn run-btn-secondary run-btn-sm"}
+          onClick={onFindSubstitutes}
+          disabled={substitutesLoading}
+          title={noSubs ? "No registered substitutes — shows same-category products checked against this kitchen's policy" : undefined}
+        >
+          {substitutesLoading ? "Finding…" : noSubs ? "Suggest similar products" : "Find compliant substitutes"}
         </button>
       </div>
     </div>
@@ -937,6 +997,30 @@ function ProductExplorer() {
   const [customResult, setCustomResult] = useState<ScenarioResult | { error: string; message?: string } | null>(null);
   const [running, setRunning] = useState(false);
   const [substitutesLoadingId, setSubstitutesLoadingId] = useState<string | null>(null);
+
+  // Every action's outcome lands further down the page, so scroll to it once React has rendered it.
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const selectedRef = useRef<HTMLDivElement>(null);
+  const outcomeRef = useRef<HTMLDivElement>(null);
+  const [scrollTarget, setScrollTarget] = useState<{ to: "results" | "selected" | "outcome"; n: number } | null>(null);
+  const scrollTo = (to: "results" | "selected" | "outcome") => setScrollTarget((prev) => ({ to, n: (prev?.n ?? 0) + 1 }));
+  useEffect(() => {
+    if (!scrollTarget) return;
+    const el = { results: resultsRef, selected: selectedRef, outcome: outcomeRef }[scrollTarget.to].current;
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [scrollTarget]);
+
+  const pendingLabel = running
+    ? "Evaluating purchase with the AI buyer agent…"
+    : substitutesLoadingId
+      ? "Finding and evaluating registered substitutes…"
+      : null;
+
+  function selectProduct(r: ProductLookupResult) {
+    setSelected(r);
+    setCustomResult(null);
+    scrollTo("selected");
+  }
 
   async function runSearch(q: string): Promise<ProductLookupResult[]> {
     setSearching(true);
@@ -967,6 +1051,7 @@ function ProductExplorer() {
     const q = overrideQuery ?? query;
     if (overrideQuery !== undefined) setQuery(overrideQuery);
     await runSearch(q);
+    scrollTo("results");
   }
 
   async function selectRecommended(item: (typeof RECOMMENDED_PRODUCTS)[number]) {
@@ -974,12 +1059,14 @@ function ProductExplorer() {
     const results = await runSearch(item.query);
     const match = results.find((r) => r.envelope.claim.product_id === item.id) ?? results[0] ?? null;
     setSelected(match);
+    if (match) scrollTo("selected");
   }
 
   async function evaluatePurchase() {
     if (!selected) return;
     setRunning(true);
     setCustomResult(null);
+    scrollTo("outcome");
     try {
       const res = await fetch("/api/custom-quote", {
         method: "POST",
@@ -988,6 +1075,10 @@ function ProductExplorer() {
       });
       const data = await res.json();
       setCustomResult(data);
+      scrollTo("outcome");
+    } catch (err) {
+      setCustomResult({ error: "request_failed", message: (err as Error).message });
+      scrollTo("outcome");
     } finally {
       setRunning(false);
     }
@@ -997,6 +1088,7 @@ function ProductExplorer() {
     setSelected(r);
     setSubstitutesLoadingId(r.envelope.claim.product_id);
     setCustomResult(null);
+    scrollTo("outcome");
     try {
       const res = await fetch("/api/substitutes", {
         method: "POST",
@@ -1005,12 +1097,17 @@ function ProductExplorer() {
       });
       const data = await res.json();
       setCustomResult(data);
+      scrollTo("outcome");
+    } catch (err) {
+      setCustomResult({ error: "request_failed", message: (err as Error).message });
+      scrollTo("outcome");
     } finally {
       setSubstitutesLoadingId(null);
     }
   }
 
   const selectedBannedHits = selected ? bannedAllergenHits(selected.allergens) : [];
+  const selectedOutOfStock = selected?.envelope.claim.availability.status === "out_of_stock";
 
   return (
     <div className="workspace explorer-workspace" id="explorer">
@@ -1056,14 +1153,14 @@ function ProductExplorer() {
       {searchError && <p className="mock-note explorer-error">{searchError}</p>}
 
       {searchResults && (
-        <div className="explorer-results">
+        <div className="explorer-results scroll-anchor" ref={resultsRef}>
           {searchResults.length === 0 && <p className="mock-note">No matches in the catalog for that search.</p>}
           {searchResults.map((r) => (
             <ProductCard
               r={r}
               key={r.envelope.claim.product_id}
               isSelected={selected?.envelope.claim.product_id === r.envelope.claim.product_id}
-              onSelect={() => setSelected(r)}
+              onSelect={() => selectProduct(r)}
               onFindSubstitutes={() => findSubstitutesFor(r)}
               substitutesLoading={substitutesLoadingId === r.envelope.claim.product_id}
             />
@@ -1072,8 +1169,16 @@ function ProductExplorer() {
       )}
 
       {selected && (
-        <div className="detail-card">
+        <div className="detail-card scroll-anchor" ref={selectedRef}>
           <h4>Selected: {selected.name}</h4>
+          {selectedOutOfStock && (
+            <div className="explorer-warning" style={{ marginBottom: 10 }}>
+              ⚠ This product is out of stock, so it can't be ordered directly.{" "}
+              {selected.registered_substitute_count === 0
+                ? "The catalog registers no substitutes for it either — evaluating it will suggest same-category products for you to review."
+                : "Evaluating it will check its registered substitutes instead."}
+            </div>
+          )}
           {selectedBannedHits.length > 0 && (
             <div className="explorer-warning" style={{ marginBottom: 10 }}>
               ⚠ This product contains banned allergen code(s) {selectedBannedHits.join(", ")}. It's selected here for inspection
@@ -1099,12 +1204,20 @@ function ProductExplorer() {
         </div>
       )}
 
-      {customResult &&
-        ("error" in customResult ? (
-          <p className="mock-note explorer-error">{customResult.message ?? customResult.error}</p>
-        ) : (
-          <TransactionWorkspace result={customResult} />
-        ))}
+      <div className="scroll-anchor" ref={outcomeRef}>
+        {pendingLabel && (
+          <div className="detail-card explorer-pending" role="status" aria-live="polite">
+            <span className="explorer-spinner" aria-hidden="true" />
+            {pendingLabel}
+          </div>
+        )}
+        {customResult &&
+          ("error" in customResult ? (
+            <p className="mock-note explorer-error">{customResult.message ?? customResult.error}</p>
+          ) : (
+            <TransactionWorkspace result={customResult} />
+          ))}
+      </div>
     </div>
   );
 }

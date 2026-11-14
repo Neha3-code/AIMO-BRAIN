@@ -2033,3 +2033,45 @@ footer .note {
     padding: 0 16px;
   }
 }
+
+/* ---- explorer: scroll targets, substitute count, pending state ---- */
+
+/* Keep scrolled-to results clear of the sticky site header. */
+.scroll-anchor {
+  scroll-margin-top: 110px;
+}
+
+.explorer-subs-note {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--muted, #5b6770);
+}
+
+.explorer-pending {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 600;
+}
+
+.explorer-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 3px solid var(--border);
+  border-top-color: currentColor;
+  animation: explorer-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes explorer-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .explorer-spinner {
+    animation: none;
+  }
+}

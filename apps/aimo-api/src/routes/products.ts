@@ -46,7 +46,8 @@ export function registerProductRoutes(app: FastifyInstance) {
         delivery_reliability: c.delivery_reliability,
         delivery_lead_time_days: null,
         net_weight_kg_per_sales_unit: netWeightKgFor(c.id),
-        composition: compositionFor(c.id)
+        composition: compositionFor(c.id),
+        registered_substitute_count: c.substitutions?.length ?? 0
       };
     });
 

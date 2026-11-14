@@ -71,6 +71,9 @@ export interface ProductLookupResult {
   delivery_lead_time_days: number | null;
   net_weight_kg_per_sales_unit?: number | null;
   composition?: RecipeComposition | null;
+  /** How many substitutes the catalog registers for this product. Only ~1 % of the catalog has any,
+   *  so a buyer UI can say so upfront instead of letting the user discover an empty list. */
+  registered_substitute_count?: number;
 }
 
 export interface AllergenFact {

@@ -12,7 +12,7 @@ import {
   type OrderFootprint,
   type RecipeChemistryResult
 } from "./policyEngine";
-import type { AllergenFact, AuditEvent, Order, ProductFacts, Quote, QuoteAlternative, QuoteLine } from "@aimo/shared";
+import type { AllergenFact, AuditEvent, Order, ProductFacts, ProductLookupResult, Quote, QuoteAlternative, QuoteLine } from "@aimo/shared";
 
 export type Stage = "request" | "quote" | "buyer_policy" | "aimo_policy" | "approval" | "order" | "audit" | "result";
 export type StepStatus = "complete" | "passed" | "blocked" | "human_review" | "pending" | "rejected" | "info";
@@ -99,6 +99,13 @@ export interface ScenarioResult {
   /** True when the product has zero registered substitutes — distinct from having substitutes
    *  that were evaluated and rejected. */
   noRegisteredSubstitutes?: boolean;
+  /** True when the requested product itself is out of stock — surfaced explicitly so the buyer
+   *  isn't left to infer it from an empty substitutes list. */
+  requestedProductOutOfStock?: boolean;
+  /** Fallback when there are no registered substitutes: same-category products, evaluated
+   *  against the same policy but never auto-selected. */
+  categorySuggestions?: AlternativeReview[];
+  categorySuggestionsNote?: string;
 }
 
 function step(steps: ScenarioStep[], stage: Stage, status: StepStatus, title: string, detail: string, data?: unknown) {
@@ -161,16 +168,11 @@ function sustainabilitySentence(s: SustainabilityPanel): string {
 
 /** Runs every disclosed alternative through the kitchen's full substitution policy and records
  *  one timeline step per rejection plus the final pick. */
-function reviewAlternatives(
-  steps: ScenarioStep[],
-  originalFacts: ProductFacts,
-  alts: QuoteAlternative[]
-): { alternatives: AlternativeReview[]; chosen: QuoteAlternative | null } {
-  const { evaluations, chosen } = evaluateSubstitutes(HOTEL_ESPOO_POLICY, originalFacts, alts);
-  const alternatives: AlternativeReview[] = evaluations.map((e) => {
+type SubstituteEvaluation = ReturnType<typeof evaluateSubstitutes>["evaluations"][number];
+
+function toAlternativeReview(e: SubstituteEvaluation, isChosen: boolean): AlternativeReview {
     const failed = e.checks.filter((c) => c.status === "fail");
     const warned = e.checks.filter((c) => c.status === "warn");
-    const isChosen = chosen?.alt.product_id === e.alt.product_id;
     const buyerDecision: AlternativeReview["buyerDecision"] = isChosen ? "selected" : !e.eligible ? "rejected" : e.autoEligible ? "eligible" : "needs_review";
     return {
       rank: e.alt.rank,
@@ -196,12 +198,92 @@ function reviewAlternatives(
       carbonSubstitute: e.carbon.substituteIntensity,
       carbonLimitPct: e.carbon.limitPct
     };
-  });
+}
+
+function reviewAlternatives(
+  steps: ScenarioStep[],
+  originalFacts: ProductFacts,
+  alts: QuoteAlternative[]
+): { alternatives: AlternativeReview[]; chosen: QuoteAlternative | null } {
+  const { evaluations, chosen } = evaluateSubstitutes(HOTEL_ESPOO_POLICY, originalFacts, alts);
+  const alternatives = evaluations.map((e) => toAlternativeReview(e, chosen?.alt.product_id === e.alt.product_id));
   for (const a of alternatives.filter((x) => x.buyerDecision === "rejected")) {
     const failedChecks = a.checks.filter((c) => c.status === "fail").map((c) => c.check);
     step(steps, "buyer_policy", "rejected", `Rejected: ${a.name}`, `Failed ${failedChecks.join(", ")} — ${a.buyerReason}`);
   }
   return { alternatives, chosen: chosen?.alt ?? null };
+}
+
+const MAX_CATEGORY_SUGGESTIONS = 5;
+
+/** Fallback when the catalog registers no substitutes for a product (true for ~99 % of SKUs):
+ *  look up other products in the same catalog category and run them through the exact same
+ *  substitution policy. These are suggestions, not registered substitutes, so the agent never
+ *  auto-selects one: the best a suggestion can be is "eligible", and a human makes the call.
+ *  Only orderable products are shown, best recipe match first. */
+async function suggestFromCategory(
+  client: AimoClient,
+  steps: ScenarioStep[],
+  originalId: string,
+  originalFacts: ProductFacts
+): Promise<{ suggestions: AlternativeReview[]; note: string } | null> {
+  if (!originalFacts.category) return null;
+  let results: ProductLookupResult[];
+  try {
+    ({ results } = await client.lookupProducts({ category: originalFacts.category }));
+  } catch {
+    return null; // suggestions are a nice-to-have; never fail the scenario over them
+  }
+  const toNum = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+  const candidates: QuoteAlternative[] = results
+    .filter((r) => r.envelope.claim.product_id !== originalId)
+    .map((r, i) => ({
+      rank: i + 1,
+      product_id: r.envelope.claim.product_id,
+      name: r.name,
+      price_eur: r.envelope.claim.price?.amount ?? null,
+      availability: r.envelope.claim.availability,
+      delivery_lead_time_days: r.delivery_lead_time_days,
+      allergens: r.allergens,
+      facts: {
+        category: r.category || null,
+        carbon_footprint_kg_co2e_per_kg: toNum(r.carbon_footprint_kg_co2e_per_kg),
+        delivery_reliability: toNum(r.delivery_reliability),
+        net_weight_kg_per_sales_unit: toNum(r.net_weight_kg_per_sales_unit),
+        composition: r.composition ?? null
+      },
+      envelope: r.envelope
+    }));
+  if (candidates.length === 0) return null;
+
+  const { evaluations } = evaluateSubstitutes(HOTEL_ESPOO_POLICY, originalFacts, candidates);
+  const decisionOrder = { selected: 0, eligible: 0, needs_review: 1, rejected: 2 } as const;
+  const suggestions = evaluations
+    .filter((e) => e.checks.find((c) => c.check === "availability")?.status === "pass")
+    .map((e) => toAlternativeReview(e, false))
+    .sort(
+      (a, b) =>
+        decisionOrder[a.buyerDecision] - decisionOrder[b.buyerDecision] ||
+        (b.recipe.score ?? -1) - (a.recipe.score ?? -1) ||
+        (a.facts.carbon_footprint_kg_co2e_per_kg ?? Infinity) - (b.facts.carbon_footprint_kg_co2e_per_kg ?? Infinity)
+    )
+    .slice(0, MAX_CATEGORY_SUGGESTIONS)
+    .map((a, i) => ({ ...a, rank: i + 1 }));
+
+  const passing = suggestions.filter((a) => a.buyerDecision !== "rejected").length;
+  step(
+    steps,
+    "buyer_policy",
+    "info",
+    "Same-category suggestions (not registered substitutes)",
+    suggestions.length === 0
+      ? `Checked ${candidates.length} other product(s) in category ${originalFacts.category} — none is orderable right now.`
+      : `Checked ${candidates.length} other product(s) in category ${originalFacts.category}; showing ${suggestions.length} orderable one(s), ${passing} of which pass this kitchen's checks. A human has to choose — the agent never auto-substitutes an unregistered product.`
+  );
+  return {
+    suggestions,
+    note: `The catalog registers no substitutes for this product, so these are other in-stock products from the same catalog category (${originalFacts.category}), run through the same allergen, recipe, carbon and delivery-reliability checks. They are suggestions for a human to review — not catalog-registered substitutes, and never auto-selected.`
+  };
 }
 
 async function withAudit(order: Order | null, client: AimoClient, steps: ScenarioStep[]): Promise<AuditEvent[]> {
@@ -624,15 +706,23 @@ export async function scenario5RecipeChemistry(client: AimoClient = buildClient(
     subs
   );
 
+  const originalOutOfStock = subs.envelope.claim.availability.status === "out_of_stock";
+  if (originalOutOfStock) {
+    step(steps, "quote", "blocked", "Requested product is out of stock", `${subs.name} is currently out of stock — it can't be ordered directly.`);
+  }
+
   if (subs.alternatives.length === 0) {
+    const fallback = await suggestFromCategory(client, steps, productId, original);
     step(steps, "result", "info", "Buyer decision", "No registered substitutes to evaluate — nothing selected, no order placed.");
     return {
       id: "5",
       name,
       tagline,
       outcome: "no_viable_alternative",
-      headline: "No registered substitutes found",
-      subheadline: `Aimo's catalogue has no registered substitutes for ${subs.name}. No alternatives were available for the buyer agent to evaluate.`,
+      headline: originalOutOfStock ? "Out of stock — and no registered substitutes" : "No registered substitutes found",
+      subheadline: originalOutOfStock
+        ? `${subs.name} is out of stock, and Aimo's catalogue has no registered substitutes for it. It can't be ordered right now and there is nothing for the buyer agent to switch to.`
+        : `Aimo's catalogue has no registered substitutes for ${subs.name}. No alternatives were available for the buyer agent to evaluate.`,
       transactionId: null,
       transactionIdKind: null,
       ok: true,
@@ -644,7 +734,10 @@ export async function scenario5RecipeChemistry(client: AimoClient = buildClient(
       audit: [],
       requestedProduct: { id: subs.product_id, name: subs.name },
       originalFacts: original,
-      noRegisteredSubstitutes: true
+      noRegisteredSubstitutes: true,
+      requestedProductOutOfStock: originalOutOfStock,
+      categorySuggestions: fallback?.suggestions,
+      categorySuggestionsNote: fallback?.note
     };
   }
 
@@ -678,6 +771,7 @@ export async function scenario5RecipeChemistry(client: AimoClient = buildClient(
     order: null,
     audit: [],
     requestedProduct: { id: subs.product_id, name: subs.name },
+    requestedProductOutOfStock: originalOutOfStock,
     alternatives,
     buyerBannedAllergenCodes: HOTEL_ESPOO_POLICY.bannedAllergenCodes,
     originalFacts: original,
@@ -702,17 +796,18 @@ export async function runCustomPurchase(productId: string, qty: number, client: 
   const line = quote.lines[0];
 
   if (line.status === "unavailable") {
-    step(steps, "quote", "complete", "Quote obtained", `${line.requested_product_name} is unavailable — see disclosed alternatives below.`, quote);
+    step(steps, "quote", "blocked", "Requested product is out of stock", `${line.requested_product_name} is out of stock — it can't be ordered directly. Checking its registered substitutes.`, quote);
 
     if (line.alternatives.length === 0) {
+      const fallback = await suggestFromCategory(client, steps, productId, factsOf(line));
       step(steps, "result", "info", "Buyer decision", "No registered substitutes to evaluate — nothing selected, no order placed.");
       return {
         id: "custom",
         name,
         tagline,
         outcome: "no_viable_alternative",
-        headline: "No registered substitutes found",
-        subheadline: `Aimo's catalogue has no registered substitutes for ${line.requested_product_name}. No alternatives were available for the buyer agent to evaluate.`,
+        headline: "Out of stock — order not placed",
+        subheadline: `${line.requested_product_name} is out of stock, and Aimo's catalogue has no registered substitutes for it. Nothing was ordered.`,
         transactionId: quote.quote_id,
         transactionIdKind: "quote",
         ok: true,
@@ -724,7 +819,10 @@ export async function runCustomPurchase(productId: string, qty: number, client: 
         audit: [],
         requestedProduct: { id: line.requested_product_id, name: line.requested_product_name },
         originalFacts: factsOf(line),
-        noRegisteredSubstitutes: true
+        noRegisteredSubstitutes: true,
+        requestedProductOutOfStock: true,
+        categorySuggestions: fallback?.suggestions,
+        categorySuggestionsNote: fallback?.note
       };
     }
 
@@ -740,7 +838,7 @@ export async function runCustomPurchase(productId: string, qty: number, client: 
       tagline,
       outcome: chosen ? "substituted" : "no_viable_alternative",
       headline: chosen ? `Substitute identified: ${chosen.name}` : "No suitable alternative",
-      subheadline: `Requested product unavailable: ${line.requested_product_name}`,
+      subheadline: `${line.requested_product_name} is out of stock — ${chosen ? "a policy-compliant registered substitute was found instead" : "none of its registered substitutes passes this kitchen's policy"}. Nothing was ordered.`,
       transactionId: quote.quote_id,
       transactionIdKind: "quote",
       ok: true,
@@ -751,6 +849,7 @@ export async function runCustomPurchase(productId: string, qty: number, client: 
       order: null,
       audit: [],
       requestedProduct: { id: line.requested_product_id, name: line.requested_product_name },
+      requestedProductOutOfStock: true,
       alternatives,
       buyerBannedAllergenCodes: HOTEL_ESPOO_POLICY.bannedAllergenCodes,
       originalFacts: factsOf(line),
