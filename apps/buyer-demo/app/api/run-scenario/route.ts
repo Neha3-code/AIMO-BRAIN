@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { scenario1Autonomous, scenario2TwoSidedApproval, scenario3StockOutSubstitution } from "../../../lib/scenarios";
+import { scenario1Autonomous, scenario2TwoSidedApproval, scenario3StockOutSubstitution, scenario4PartialAvailability } from "../../../lib/scenarios";
 
 const SCENARIOS = {
   "1": scenario1Autonomous,
   "2": scenario2TwoSidedApproval,
-  "3": scenario3StockOutSubstitution
+  "3": scenario3StockOutSubstitution,
+  "4": scenario4PartialAvailability
 } as const;
 
 export async function POST(req: NextRequest) {

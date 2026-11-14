@@ -4,7 +4,7 @@ import type { AllergenFact, AuditEvent, Order, Quote, QuoteLine } from "@aimo/sh
 
 export type Stage = "request" | "quote" | "buyer_policy" | "aimo_policy" | "approval" | "audit" | "result";
 export type StepStatus = "complete" | "passed" | "blocked" | "human_review" | "pending" | "rejected" | "info";
-export type Outcome = "confirmed_auto" | "confirmed_after_approval" | "held" | "no_viable_alternative" | "blocked";
+export type Outcome = "confirmed_auto" | "confirmed_after_approval" | "held" | "no_viable_alternative" | "blocked" | "partial";
 
 export interface ScenarioStep {
   stage: Stage;
@@ -56,6 +56,9 @@ export interface ScenarioResult {
   governanceCheck?: GovernanceCheckResult;
   requestedProduct?: { id: string; name: string };
   alternatives?: AlternativeReview[];
+  /** The one or two quote lines actually relevant to this scenario's narrative, when the
+   *  full quote (e.g. scenario 3/4's multi-candidate probe) contains unrelated noise lines. */
+  relevantLines?: QuoteLine[];
 }
 
 function step(steps: ScenarioStep[], stage: Stage, status: StepStatus, title: string, detail: string, data?: unknown) {
@@ -328,13 +331,93 @@ export async function scenario3StockOutSubstitution(client: AimoClient = buildCl
   };
 }
 
+/** Scenario 4 — partial availability. A single order request names several distinct products in one basket;
+ *  one line is in stock and ready to order, another is genuinely out of stock. Tests that a mixed-result quote
+ *  is handled line by line rather than the whole request succeeding or failing as one unit. This is a
+ *  quote-level demonstration — deliberately doesn't place an order, since splitting a single commit into a
+ *  partially-fulfilled order is real production work (idempotency, partial-shipment billing) out of scope here;
+ *  see README "what production would also need". */
+export async function scenario4PartialAvailability(client: AimoClient = buildClient()): Promise<ScenarioResult> {
+  const steps: ScenarioStep[] = [];
+  const name = "Partial availability";
+  const tagline = "Mixed basket";
+
+  step(steps, "request", "complete", "Buyer request received", "One basket, two products: lactose-free milk plus a bakery item that may be out of stock.");
+
+  const quote = await client.requestQuote(BUYER_ID, [
+    { product_id: "464073", qty: 200 },
+    ...SUBSTITUTION_CANDIDATES.map((id) => ({ product_id: id, qty: 10 }))
+  ]);
+  const milkLine = quote.lines.find((l) => l.requested_product_id === "464073")!;
+  const otherLine = quote.lines.find((l) => l.requested_product_id !== "464073" && l.status === "unavailable") ?? quote.lines.find((l) => l.requested_product_id !== "464073")!;
+
+  step(
+    steps,
+    "quote",
+    "complete",
+    "Quote obtained, line by line",
+    `${milkLine.requested_product_name}: ${milkLine.status}. ${otherLine.requested_product_name}: ${otherLine.status}.`,
+    quote
+  );
+
+  const bothReady = milkLine.status === "available" && otherLine.status === "available";
+  if (bothReady) {
+    step(steps, "result", "info", "Result", "Both lines were in stock on the live upstream backend at demo time — nothing partial to demonstrate right now.");
+    return {
+      id: "4",
+      name,
+      tagline,
+      outcome: "confirmed_auto",
+      headline: "Both lines in stock right now",
+      subheadline: "Nothing partial to demonstrate against the live backend at this moment.",
+      transactionId: quote.quote_id,
+      transactionIdKind: "quote",
+      ok: true,
+      steps,
+      buyerPolicy: null,
+      aimoPolicy: null,
+      quote,
+      order: null,
+      audit: [],
+      relevantLines: [milkLine, otherLine]
+    };
+  }
+
+  step(steps, "result", "complete", "Per-line outcome", `${milkLine.requested_product_name} ready to order now; ${otherLine.requested_product_name} needs a substitution decision — handled independently, not as one failed basket.`);
+
+  return {
+    id: "4",
+    name,
+    tagline,
+    outcome: "partial",
+    headline: `${milkLine.status === "available" ? "1" : "0"} of 2 lines ready to order`,
+    subheadline: `${milkLine.requested_product_name} — ${milkLine.status}; ${otherLine.requested_product_name} — ${otherLine.status}`,
+    transactionId: quote.quote_id,
+    transactionIdKind: "quote",
+    ok: true,
+    steps,
+    buyerPolicy: null,
+    aimoPolicy: null,
+    quote,
+    order: null,
+    audit: [],
+    relevantLines: [milkLine, otherLine]
+  };
+}
+
 export const SCENARIOS = [
   { id: "1", fn: scenario1Autonomous },
   { id: "2", fn: scenario2TwoSidedApproval },
-  { id: "3", fn: scenario3StockOutSubstitution }
+  { id: "3", fn: scenario3StockOutSubstitution },
+  { id: "4", fn: scenario4PartialAvailability }
 ] as const;
 
 export async function runAllScenarios(): Promise<ScenarioResult[]> {
   const client = buildClient();
-  return [await scenario1Autonomous(client), await scenario2TwoSidedApproval(client), await scenario3StockOutSubstitution(client)];
+  return [
+    await scenario1Autonomous(client),
+    await scenario2TwoSidedApproval(client),
+    await scenario3StockOutSubstitution(client),
+    await scenario4PartialAvailability(client)
+  ];
 }

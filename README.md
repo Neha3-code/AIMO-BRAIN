@@ -107,11 +107,16 @@ npm run demo
 
 - **Neon**: create a project, run `npm run migrate && npm run seed` once
   against its connection string.
-- **Railway**: deploy `apps/aimo-api` as a Node service (`npm run build && npm start`
-  from that workspace). Env vars: `DATABASE_URL`, `AIMO_UPSTREAM_BASE_URL`,
-  `AIMO_UPSTREAM_API_KEY`, `AIMO_BUYER_API_KEYS`.
-- **Vercel/Netlify**: deploy `apps/buyer-demo` as a Next.js app. Env vars:
-  `AIMO_API_BASE_URL` (the Railway URL), `AIMO_API_KEY`, `BUYER_ID`.
+- **Render**: deploy `apps/aimo-api` as a Node web service, root directory
+  the repo root (so npm workspaces resolve), build `npm install`, start
+  `npm run start -w @aimo/aimo-api`. Env vars: `DATABASE_URL`,
+  `AIMO_UPSTREAM_BASE_URL`, `AIMO_UPSTREAM_API_KEY`, `AIMO_BUYER_API_KEYS`.
+  Live at https://aimo-api.onrender.com.
+- **Vercel/Netlify**: deploy `apps/buyer-demo` as a Next.js app (root
+  directory `apps/buyer-demo`, deployed from the monorepo root so the
+  `@aimo/shared` workspace package resolves). Env vars: `AIMO_API_BASE_URL`
+  (the Render URL), `AIMO_API_KEY`, `BUYER_ID`. Live at
+  https://buyer-demo.vercel.app.
 
 ## Verified end-to-end
 
@@ -135,6 +140,14 @@ Also confirmed the same flow through `apps/buyer-demo`'s Next.js API route
 
 ## Demo script
 
-See `PROJECT_SPEC.md` §8 for the three scenarios this build targets; the
-same three run from both `npm run demo` (CLI) and the web UI
-(`apps/buyer-demo`'s home page).
+See `PROJECT_SPEC.md` §8 for the three scenarios it specifies; this build
+adds a 4th (partial availability, a mixed basket where one line is ready
+and one isn't, handled independently). All four run from both `npm run demo`
+(CLI) and the web UI (`apps/buyer-demo`'s home page).
+
+## Second independent client
+
+`clients/python/demo.py` hits `aimo-api`'s documented `/v1` contract with
+zero shared code and the Python standard library only (no `pip install`) —
+proof this is a real, language-agnostic interface, not something only our
+own TypeScript client understands. See `clients/python/README.md`.

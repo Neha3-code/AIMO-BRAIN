@@ -25,6 +25,13 @@ const SCENARIO_CARDS = [
     title: "Stock-out and substitution",
     tagline: "Alternative selection",
     description: "The requested product is unavailable. Aimo returns ranked alternatives and the buyer agent checks its own constraints."
+  },
+  {
+    id: "4",
+    index: "04",
+    title: "Partial availability",
+    tagline: "Mixed basket",
+    description: "One basket, two products — one ready to order, one out of stock. Each line is resolved on its own, not as one pass/fail outcome."
   }
 ];
 
@@ -43,7 +50,8 @@ const OUTCOME_META: Record<Outcome, { label: string; tone: "good" | "warn" | "ne
   confirmed_after_approval: { label: "Order confirmed", tone: "good" },
   held: { label: "Held for approval", tone: "warn" },
   no_viable_alternative: { label: "No suitable alternative", tone: "neutral" },
-  blocked: { label: "Order not placed", tone: "warn" }
+  blocked: { label: "Order not placed", tone: "warn" },
+  partial: { label: "Partially available", tone: "warn" }
 };
 
 function formatDateTime(iso: string): string {
@@ -125,9 +133,9 @@ function PolicyPanels({ result }: { result: ScenarioResult }) {
 
 function QuoteDetail({ result }: { result: ScenarioResult }) {
   if (!result.quote) return null;
-  // Scenario 3 renders a dedicated alternatives table instead — its quote
+  // Scenarios 3 and 4 render their own dedicated views instead — their quote
   // carries several unrelated probe lines, not one meaningful line to show here.
-  if (result.id === "3") return null;
+  if (result.id === "3" || result.id === "4") return null;
   const line = result.quote.lines[0];
   const unit = quantityUnitFor(line.requested_product_id);
   return (
@@ -216,6 +224,51 @@ function AlternativesTable({ result }: { result: ScenarioResult }) {
   );
 }
 
+function PartialLinesCard({ result }: { result: ScenarioResult }) {
+  if (!result.relevantLines) return null;
+  return (
+    <div className="detail-card">
+      <h4>Line-by-line outcome</h4>
+      <table className="alt-table">
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>Quantity</th>
+            <th>Status</th>
+            <th>Price</th>
+          </tr>
+        </thead>
+        <tbody>
+          {result.relevantLines.map((line) => {
+            const unit = quantityUnitFor(line.requested_product_id);
+            return (
+              <tr key={line.requested_product_id} className={line.status === "unavailable" ? "alt-row-rejected" : "alt-row-eligible"}>
+                <td>
+                  {line.requested_product_name}
+                  <div className="alt-sku">{line.requested_product_id}</div>
+                </td>
+                <td>
+                  {line.requested_qty.toLocaleString()} {unit}
+                </td>
+                <td>
+                  <Pill status={line.status === "available" ? "passed" : "blocked"}>{line.status}</Pill>
+                </td>
+                <td>{line.line_total_eur !== null ? `€${line.line_total_eur.toFixed(2)}` : "—"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {result.relevantLines.some((l) => l.status === "unavailable") && (
+        <p className="mock-note" style={{ marginTop: 10 }}>
+          The unavailable line would go through the same substitution-ranking flow as scenario 3 (full disclosure, buyer policy applied
+          per alternative) rather than blocking the whole basket.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ApprovalDetail({ result }: { result: ScenarioResult }) {
   const order = result.order;
   if (!order || !order.approval.required) return null;
@@ -293,6 +346,7 @@ function TransactionWorkspace({ result }: { result: ScenarioResult }) {
       <PolicyPanels result={result} />
       <QuoteDetail result={result} />
       <AlternativesTable result={result} />
+      <PartialLinesCard result={result} />
       <GovernanceCheckCard result={result} />
       <ApprovalDetail result={result} />
       <AuditList events={result.audit} />
