@@ -1886,6 +1886,7 @@ function ProductExplorer() {
 }
 
 export default function Page() {
+  const [policyView, setPolicyView] = useState<"buyer" | "supplier">("buyer");
   const [results, setResults] = useState<Record<string, ScenarioResult | { error: string; message?: string } | undefined>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [activeTab, setActiveTab] = useState(SCENARIO_CARDS[0].id);
@@ -2035,37 +2036,71 @@ export default function Page() {
               Rules in effect for this demo
             </div>
             <p className="explorer-lede" style={{ marginBottom: 14 }}>
-              Not a description of the rules — the actual configured values, read from each side&apos;s own code. Neither side
-              can see the other&apos;s.
+              Not a description of the rules — the actual configured values, read from each side&apos;s own code. Switch seats
+              below: neither side can see the other&apos;s.
             </p>
+            <div className="view-toggle" role="tablist" aria-label="View rules as">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={policyView === "buyer"}
+                className={`view-toggle-btn ${policyView === "buyer" ? "view-toggle-btn-active" : ""}`}
+                onClick={() => setPolicyView("buyer")}
+              >
+                <RoleIcon name="buyer" /> Buyer view
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={policyView === "supplier"}
+                className={`view-toggle-btn ${policyView === "supplier" ? "view-toggle-btn-active" : ""}`}
+                onClick={() => setPolicyView("supplier")}
+              >
+                <RoleIcon name="aimo" /> Supplier view
+              </button>
+            </div>
             <div className="policy-grid">
-              <div className="policy-card policy-card-buyer">
-                <div className="policy-owner">Buyer-owned — Hotel Espoo&apos;s kitchen policy</div>
-                <ul className="rules-list">
-                  <li>
-                    Banned allergen code: <code>{HOTEL_ESPOO_POLICY.bannedAllergenCodes.join(", ")}</code> (tree nuts)
-                  </li>
-                  <li>Max delivery deviation: {HOTEL_ESPOO_POLICY.maxDeliveryDeviationDays} day late</li>
-                  <li>Min delivery reliability for an AI-picked substitute: {Math.round(HOTEL_ESPOO_POLICY.minDeliveryReliability * 100)}%</li>
-                  <li>Max carbon increase for a substitute: {HOTEL_ESPOO_POLICY.maxSubstituteCarbonIncreasePct}% over the original</li>
-                  <li>Local budget cap: {HOTEL_ESPOO_POLICY.maxBudgetEur === null ? "none set — defers to Aimo's own credit check" : formatEur(HOTEL_ESPOO_POLICY.maxBudgetEur)}</li>
-                </ul>
-                <p className="mock-note" style={{ marginTop: 8 }}>
-                  Defined in <code>apps/buyer-demo/lib/policyEngine.ts</code> — runs entirely inside the buyer app.
-                </p>
-              </div>
-              <div className="policy-card policy-card-aimo">
-                <div className="policy-owner">Supplier-owned — Aimo&apos;s commercial rules for this buyer</div>
-                <ul className="rules-list">
-                  <li>Credit limit: {formatEur(5000)}</li>
-                  <li>Auto-approve ceiling: {formatEur(2000)} — orders above this still need a human, even within the credit limit</li>
-                  <li>No visibility into the buyer&apos;s allergens, recipe rules or carbon limits</li>
-                </ul>
-                <p className="mock-note" style={{ marginTop: 8 }}>
-                  Enforced in <code>apps/aimo-api/src/guardrail.ts</code> against this demo buyer&apos;s seeded limits — a separate
-                  service, over HTTP, never imported by the buyer app.
-                </p>
-              </div>
+              {policyView === "buyer" ? (
+                <div className="policy-card policy-card-buyer">
+                  <div className="policy-owner">Buyer-owned — Hotel Espoo&apos;s kitchen policy</div>
+                  <ul className="rules-list">
+                    <li>
+                      Banned allergen code: <code>{HOTEL_ESPOO_POLICY.bannedAllergenCodes.join(", ")}</code> (tree nuts)
+                    </li>
+                    <li>Max delivery deviation: {HOTEL_ESPOO_POLICY.maxDeliveryDeviationDays} day late</li>
+                    <li>Min delivery reliability for an AI-picked substitute: {Math.round(HOTEL_ESPOO_POLICY.minDeliveryReliability * 100)}%</li>
+                    <li>Max carbon increase for a substitute: {HOTEL_ESPOO_POLICY.maxSubstituteCarbonIncreasePct}% over the original</li>
+                    <li>Local budget cap: {HOTEL_ESPOO_POLICY.maxBudgetEur === null ? "none set — defers to Aimo's own credit check" : formatEur(HOTEL_ESPOO_POLICY.maxBudgetEur)}</li>
+                  </ul>
+                  <p className="mock-note" style={{ marginTop: 8 }}>
+                    Defined in <code>apps/buyer-demo/lib/policyEngine.ts</code> — runs entirely inside the buyer app.
+                  </p>
+                </div>
+              ) : (
+                <div className="policy-card policy-card-locked">
+                  <div className="policy-owner">Buyer-owned policy</div>
+                  <p className="mock-note">🔒 Not visible from the supplier seat. Switch to Buyer view to see it.</p>
+                </div>
+              )}
+              {policyView === "supplier" ? (
+                <div className="policy-card policy-card-aimo">
+                  <div className="policy-owner">Supplier-owned — Aimo&apos;s commercial rules for this buyer</div>
+                  <ul className="rules-list">
+                    <li>Credit limit: {formatEur(5000)}</li>
+                    <li>Auto-approve ceiling: {formatEur(2000)} — orders above this still need a human, even within the credit limit</li>
+                    <li>No visibility into the buyer&apos;s allergens, recipe rules or carbon limits</li>
+                  </ul>
+                  <p className="mock-note" style={{ marginTop: 8 }}>
+                    Enforced in <code>apps/aimo-api/src/guardrail.ts</code> against this demo buyer&apos;s seeded limits — a separate
+                    service, over HTTP, never imported by the buyer app.
+                  </p>
+                </div>
+              ) : (
+                <div className="policy-card policy-card-locked">
+                  <div className="policy-owner">Supplier-owned policy</div>
+                  <p className="mock-note">🔒 Not visible from the buyer seat. Switch to Supplier view to see it.</p>
+                </div>
+              )}
             </div>
           </div>
         </div>

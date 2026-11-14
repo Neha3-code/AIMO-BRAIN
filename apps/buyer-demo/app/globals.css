@@ -1099,6 +1099,55 @@ h3,
   font-size: 13px;
 }
 
+.view-toggle {
+  display: inline-flex;
+  gap: 6px;
+  background: var(--light-blue);
+  padding: 5px;
+  border-radius: 10px;
+  margin-bottom: 18px;
+}
+
+.view-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 9px 16px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.view-toggle-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.view-toggle-btn-active {
+  background: var(--white);
+  color: var(--petrol);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.policy-card-locked {
+  background: repeating-linear-gradient(135deg, var(--light-blue), var(--light-blue) 10px, #e4edef 10px, #e4edef 20px);
+  border-top-color: var(--border-strong);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 140px;
+}
+
+.policy-card-locked .policy-owner {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
 /* ---- detail cards ---- */
 
 .detail-card {
