@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { AlternativeReview, Outcome, ScenarioResult, ScenarioStep, StepStatus } from "../lib/scenarios";
-import type { AuditEvent } from "@aimo/shared";
+import type { AuditEvent, QuoteLine, TrustEnvelope } from "@aimo/shared";
 
 const SCENARIO_CARDS = [
   {
@@ -51,7 +51,9 @@ const OUTCOME_META: Record<Outcome, { label: string; tone: "good" | "warn" | "ne
   held: { label: "Held for approval", tone: "warn" },
   no_viable_alternative: { label: "No suitable alternative", tone: "neutral" },
   blocked: { label: "Order not placed", tone: "warn" },
-  partial: { label: "Partially available", tone: "warn" }
+  partial: { label: "Partially available", tone: "warn" },
+  substituted: { label: "Alternative identified", tone: "good" },
+  both_ready: { label: "Both lines ready", tone: "good" }
 };
 
 function formatDateTime(iso: string): string {
@@ -75,12 +77,28 @@ function quantityUnitFor(productId: string): string {
   return productId === "464073" ? "L" : "units";
 }
 
+/** The real upstream backend uses a sentinel value (observed as high as 9,999,999,999)
+ *  to mean "effectively unlimited" rather than a literal unit count. Never show that
+ *  number to a user as if it were real inventory. */
+function formatStockQuantity(quantity: number | null): string {
+  if (quantity === null) return "not disclosed";
+  if (quantity >= 999999) return "quantity not capped in sandbox";
+  return `${quantity.toLocaleString()} units`;
+}
+
+function friendlyAvailability(status: string): string {
+  if (status === "available" || status === "in_stock") return "Ready to order";
+  if (status === "unavailable" || status === "out_of_stock") return "Substitution needed";
+  return status.replace(/_/g, " ");
+}
+
 function Pill({ status, children }: { status: StepStatus; children: React.ReactNode }) {
   return <span className={`pill pill-${status}`}>{children}</span>;
 }
 
 function Hero({ result }: { result: ScenarioResult }) {
   const meta = OUTCOME_META[result.outcome];
+  const wasHeldFirst = result.outcome === "confirmed_after_approval";
   return (
     <div className={`hero hero-${meta.tone}`}>
       <div className="hero-top">
@@ -89,26 +107,10 @@ function Hero({ result }: { result: ScenarioResult }) {
       </div>
       <div className="hero-headline">{result.headline}</div>
       <div className="hero-sub">{result.subheadline}</div>
+      {wasHeldFirst && <div className="hero-journey">Held for Aimo-side approval first, then confirmed — not auto-approved.</div>}
       <div className="hero-ref">
-        {result.transactionIdKind === "order" ? "Order reference" : "Quote reference"}: <code>{result.transactionId}</code>
+        {result.transactionIdKind === "order" ? "Order reference" : "Quote reference (no order placed)"}: <code>{result.transactionId}</code>
       </div>
-    </div>
-  );
-}
-
-function Timeline({ steps }: { steps: ScenarioStep[] }) {
-  return (
-    <div className="timeline">
-      {steps.map((s, i) => (
-        <div className="timeline-item" key={i}>
-          <div className={`timeline-dot pill-${s.status}`} />
-          <div>
-            <div className="timeline-stage">{STAGE_LABEL[s.stage] ?? s.stage}</div>
-            <div className="timeline-title">{s.title}</div>
-            <div className="timeline-detail">{s.detail}</div>
-          </div>
-        </div>
-      ))}
     </div>
   );
 }
@@ -131,56 +133,6 @@ function PolicyPanels({ result }: { result: ScenarioResult }) {
   );
 }
 
-function QuoteDetail({ result }: { result: ScenarioResult }) {
-  if (!result.quote) return null;
-  // Scenarios 3 and 4 render their own dedicated views instead — their quote
-  // carries several unrelated probe lines, not one meaningful line to show here.
-  if (result.id === "3" || result.id === "4") return null;
-  const line = result.quote.lines[0];
-  const unit = quantityUnitFor(line.requested_product_id);
-  return (
-    <div className="detail-card">
-      <h4>Quote detail</h4>
-      <div className="kv-row">
-        <span className="k">Product</span>
-        <span className="v">{line.requested_product_name}</span>
-      </div>
-      <div className="kv-row">
-        <span className="k">Quantity</span>
-        <span className="v">
-          {line.requested_qty.toLocaleString()} {unit}
-        </span>
-      </div>
-      {line.unit_price_eur !== null && (
-        <div className="kv-row">
-          <span className="k">Unit price</span>
-          <span className="v">
-            €{line.unit_price_eur.toFixed(2)} / {unit}
-          </span>
-        </div>
-      )}
-      {line.line_total_eur !== null && (
-        <div className="kv-row">
-          <span className="k">Line total</span>
-          <span className="v">€{line.line_total_eur.toFixed(2)}</span>
-        </div>
-      )}
-      <div className="kv-row">
-        <span className="k">Quote expires</span>
-        <span className="v">{formatDateTime(result.quote.expires_at)}</span>
-      </div>
-      <details className="raw">
-        <summary>Trust envelope (source, timestamp, validity, verification)</summary>
-        <p className="mock-note">
-          <code>mock_verified</code>: this claim is live from Valio Aimo's real challenge sandbox backend, but carries no cryptographic
-          signature — an honest label, not a production verification standard.
-        </p>
-        <pre>{JSON.stringify(line.envelope, null, 2)}</pre>
-      </details>
-    </div>
-  );
-}
-
 function AlternativesTable({ result }: { result: ScenarioResult }) {
   if (!result.alternatives || !result.requestedProduct) return null;
   return (
@@ -192,10 +144,12 @@ function AlternativesTable({ result }: { result: ScenarioResult }) {
           {result.requestedProduct.name} ({result.requestedProduct.id})
         </span>
       </div>
+      {result.alternativesNote && <p className="mock-note">{result.alternativesNote}</p>}
       <table className="alt-table">
         <thead>
           <tr>
             <th>Alternative</th>
+            <th>SKU</th>
             <th>Price</th>
             <th>Availability</th>
             <th>Allergen codes</th>
@@ -205,10 +159,8 @@ function AlternativesTable({ result }: { result: ScenarioResult }) {
         <tbody>
           {result.alternatives.map((alt: AlternativeReview) => (
             <tr key={alt.product_id} className={alt.buyerDecision === "rejected" ? "alt-row-rejected" : "alt-row-eligible"}>
-              <td>
-                #{alt.rank} {alt.name}
-                <div className="alt-sku">{alt.product_id}</div>
-              </td>
+              <td>#{alt.rank} {alt.name}</td>
+              <td className="alt-sku">{alt.product_id}</td>
               <td>{alt.price_eur !== null ? `€${alt.price_eur.toFixed(2)}` : "—"}</td>
               <td>{alt.availability_status.replace(/_/g, " ")}</td>
               <td>{alt.allergens.length > 0 ? alt.allergens.map((a) => a.code).join(", ") : "none disclosed"}</td>
@@ -224,47 +176,38 @@ function AlternativesTable({ result }: { result: ScenarioResult }) {
   );
 }
 
-function PartialLinesCard({ result }: { result: ScenarioResult }) {
+function BasketOutcome({ result }: { result: ScenarioResult }) {
   if (!result.relevantLines) return null;
   return (
     <div className="detail-card">
-      <h4>Line-by-line outcome</h4>
-      <table className="alt-table">
-        <thead>
-          <tr>
-            <th>Product</th>
-            <th>Quantity</th>
-            <th>Status</th>
-            <th>Price</th>
-          </tr>
-        </thead>
-        <tbody>
-          {result.relevantLines.map((line) => {
-            const unit = quantityUnitFor(line.requested_product_id);
-            return (
-              <tr key={line.requested_product_id} className={line.status === "unavailable" ? "alt-row-rejected" : "alt-row-eligible"}>
-                <td>
-                  {line.requested_product_name}
-                  <div className="alt-sku">{line.requested_product_id}</div>
-                </td>
-                <td>
-                  {line.requested_qty.toLocaleString()} {unit}
-                </td>
-                <td>
-                  <Pill status={line.status === "available" ? "passed" : "blocked"}>{line.status}</Pill>
-                </td>
-                <td>{line.line_total_eur !== null ? `€${line.line_total_eur.toFixed(2)}` : "—"}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      {result.relevantLines.some((l) => l.status === "unavailable") && (
-        <p className="mock-note" style={{ marginTop: 10 }}>
-          The unavailable line would go through the same substitution-ranking flow as scenario 3 (full disclosure, buyer policy applied
-          per alternative) rather than blocking the whole basket.
-        </p>
+      <h4>Basket outcome — quote only, nothing ordered yet</h4>
+      <div className="basket-grid">
+        {result.relevantLines.map((line) => {
+          const unit = quantityUnitFor(line.requested_product_id);
+          const ready = line.status === "available";
+          return (
+            <div className={`basket-line ${ready ? "basket-line-ready" : "basket-line-pending"}`} key={line.requested_product_id}>
+              <div className="basket-line-name">{line.requested_product_name}</div>
+              <Pill status={ready ? "passed" : "blocked"}>{friendlyAvailability(line.status)}</Pill>
+              <div className="basket-line-meta">
+                {line.requested_qty.toLocaleString()} {unit}
+                {line.line_total_eur !== null && ` · €${line.line_total_eur.toFixed(2)}`}
+              </div>
+              {!ready && <div className="basket-line-note">Requested product unavailable — would follow the same disclosure flow as scenario 3.</div>}
+            </div>
+          );
+        })}
+      </div>
+      {result.readyToOrderEur !== undefined && (
+        <div className="kv-row" style={{ marginTop: 10, fontWeight: 700 }}>
+          <span className="k">Ready-to-order value</span>
+          <span className="v">€{result.readyToOrderEur.toFixed(2)}</span>
+        </div>
       )}
+      <p className="mock-note" style={{ marginTop: 8 }}>
+        "Ready to order" means eligible to order independently — no order has actually been placed for either line in this
+        demonstration.
+      </p>
     </div>
   );
 }
@@ -317,24 +260,137 @@ function GovernanceCheckCard({ result }: { result: ScenarioResult }) {
   );
 }
 
-function AuditList({ events }: { events: AuditEvent[] }) {
-  if (events.length === 0) return null;
+function EnvelopeSummary({ envelope }: { envelope: TrustEnvelope<any> }) {
   return (
-    <div className="detail-card">
-      <h4>Audit events</h4>
-      <div className="audit-list">
-        {events.map((e, i) => (
-          <div className="audit-item" key={i}>
-            <div className="audit-top">
-              <span className="audit-actor">{e.actor}</span>
-              <span className="audit-time">{formatDateTime(e.timestamp)}</span>
-            </div>
-            <div>{e.action.replace(/_/g, " ")}</div>
-            {e.reasons.length > 0 && <div className="audit-reasons">{e.reasons.join(" ")}</div>}
-          </div>
-        ))}
+    <div>
+      <div className="kv-row">
+        <span className="k">Issuer</span>
+        <span className="v">{envelope.provenance.issuer}</span>
       </div>
+      <div className="kv-row">
+        <span className="k">Source</span>
+        <span className="v">{envelope.provenance.source_system}</span>
+      </div>
+      <div className="kv-row">
+        <span className="k">Observed</span>
+        <span className="v">{formatDateTime(envelope.provenance.observed_at)}</span>
+      </div>
+      <div className="kv-row">
+        <span className="k">Valid until</span>
+        <span className="v">{formatDateTime(envelope.validity.expires_at)}</span>
+      </div>
+      <div className="kv-row">
+        <span className="k">Verification</span>
+        <span className="v">{envelope.verification.status}</span>
+      </div>
+      <details className="raw">
+        <summary>Raw trust envelope JSON</summary>
+        <pre>{JSON.stringify(envelope, null, 2)}</pre>
+      </details>
     </div>
+  );
+}
+
+function QuoteEvidence({ line }: { line: QuoteLine }) {
+  const unit = quantityUnitFor(line.requested_product_id);
+  const stockQty = formatStockQuantity(line.envelope.claim.availability.quantity);
+  return (
+    <div>
+      <div className="kv-row">
+        <span className="k">Product</span>
+        <span className="v">{line.requested_product_name}</span>
+      </div>
+      <div className="kv-row">
+        <span className="k">Quantity requested</span>
+        <span className="v">
+          {line.requested_qty.toLocaleString()} {unit}
+        </span>
+      </div>
+      {line.unit_price_eur !== null && (
+        <div className="kv-row">
+          <span className="k">Supplier price</span>
+          <span className="v">€{line.unit_price_eur.toFixed(2)} per sales unit</span>
+        </div>
+      )}
+      {line.unit_price_eur !== null && unit !== "units" && (
+        <div className="kv-row">
+          <span className="k">Displayed as</span>
+          <span className="v">
+            €{line.unit_price_eur.toFixed(2)} / {unit} <span style={{ opacity: 0.6 }}>(this SKU's sales unit is 1 {unit})</span>
+          </span>
+        </div>
+      )}
+      {line.line_total_eur !== null && (
+        <div className="kv-row">
+          <span className="k">Line total</span>
+          <span className="v">€{line.line_total_eur.toFixed(2)}</span>
+        </div>
+      )}
+      <div className="kv-row">
+        <span className="k">Live stock level</span>
+        <span className="v">{stockQty}</span>
+      </div>
+      <EnvelopeSummary envelope={line.envelope} />
+    </div>
+  );
+}
+
+function TechnicalEvidence({ result }: { result: ScenarioResult }) {
+  const line = result.quote?.lines.find((l) => l.requested_product_id === result.quote?.lines[0].requested_product_id);
+  const showQuoteLine = result.id === "1" || result.id === "2";
+  return (
+    <details className="tech-evidence">
+      <summary>Show technical evidence — timeline, trust envelope, audit log</summary>
+      <div className="tech-evidence-body">
+        <div className="detail-card">
+          <h4>Step-by-step timeline</h4>
+          <div className="timeline">
+            {result.steps.map((s, i) => (
+              <div className="timeline-item" key={i}>
+                <div className={`timeline-dot pill-${s.status}`} />
+                <div>
+                  <div className="timeline-stage">{STAGE_LABEL[s.stage] ?? s.stage}</div>
+                  <div className="timeline-title">{s.title}</div>
+                  <div className="timeline-detail">{s.detail}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {showQuoteLine && line && (
+          <div className="detail-card">
+            <h4>Quote and trust envelope</h4>
+            <QuoteEvidence line={line} />
+          </div>
+        )}
+
+        {result.quote && (
+          <div className="kv-row">
+            <span className="k">Quote expires</span>
+            <span className="v">{formatDateTime(result.quote.expires_at)}</span>
+          </div>
+        )}
+
+        {result.audit.length > 0 && (
+          <div className="detail-card">
+            <h4>Audit events</h4>
+            <div className="audit-list">
+              {result.audit.map((e: AuditEvent, i: number) => (
+                <div className="audit-item" key={i}>
+                  <div className="audit-top">
+                    <span className="audit-actor">{e.actor}</span>
+                    <span className="audit-time">{formatDateTime(e.timestamp)}</span>
+                  </div>
+                  <div>{e.action.replace(/_/g, " ")}</div>
+                  {e.reasons.length > 0 && <div className="audit-reasons">{e.reasons.join(" ")}</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -342,14 +398,12 @@ function TransactionWorkspace({ result }: { result: ScenarioResult }) {
   return (
     <div className="workspace">
       <Hero result={result} />
-      <Timeline steps={result.steps} />
       <PolicyPanels result={result} />
-      <QuoteDetail result={result} />
       <AlternativesTable result={result} />
-      <PartialLinesCard result={result} />
+      <BasketOutcome result={result} />
       <GovernanceCheckCard result={result} />
       <ApprovalDetail result={result} />
-      <AuditList events={result.audit} />
+      <TechnicalEvidence result={result} />
     </div>
   );
 }
@@ -396,8 +450,9 @@ export default function Page() {
 
       <p className="problem">
         <strong>The problem:</strong> how can an autonomous buyer agent purchase from a supplier safely, without either side controlling
-        the other's policies? Price and stock below are live from Valio Aimo's real Junction26 challenge backend; every claim carries a{" "}
-        <code>mock_verified</code> trust envelope, never presented as a production feed.
+        the other's policies? Price and stock below are live from Valio Aimo's real Junction26 challenge backend. Live retrieval and
+        cryptographic verification are different things: every claim carries a <code>mock_verified</code> trust envelope (explained once,
+        under "technical evidence" in each scenario below) — never presented as a production-grade verification standard.
       </p>
 
       <div className="role-grid">
@@ -418,15 +473,13 @@ export default function Page() {
       <div className="section-title">Choose a scenario</div>
       <div className="scenario-grid">
         {SCENARIO_CARDS.map((s) => (
-          <div className="scenario-card" key={s.id}>
+          <button className="scenario-card" key={s.id} onClick={() => run(s.id)} disabled={loading[s.id]}>
             <span className="scenario-index">{s.index}</span>
             <h3>{s.title}</h3>
             <span className="scenario-tagline">{s.tagline}</span>
             <p>{s.description}</p>
-            <button className="run-btn" onClick={() => run(s.id)} disabled={loading[s.id]}>
-              {loading[s.id] ? "Running…" : "Explore scenario"}
-            </button>
-          </div>
+            <span className="run-btn">{loading[s.id] ? "Running…" : "Explore scenario"}</span>
+          </button>
         ))}
       </div>
 

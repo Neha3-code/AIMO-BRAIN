@@ -4,7 +4,7 @@ import type { AllergenFact, AuditEvent, Order, Quote, QuoteLine } from "@aimo/sh
 
 export type Stage = "request" | "quote" | "buyer_policy" | "aimo_policy" | "approval" | "audit" | "result";
 export type StepStatus = "complete" | "passed" | "blocked" | "human_review" | "pending" | "rejected" | "info";
-export type Outcome = "confirmed_auto" | "confirmed_after_approval" | "held" | "no_viable_alternative" | "blocked" | "partial";
+export type Outcome = "confirmed_auto" | "confirmed_after_approval" | "held" | "no_viable_alternative" | "blocked" | "partial" | "substituted" | "both_ready";
 
 export interface ScenarioStep {
   stage: Stage;
@@ -56,6 +56,8 @@ export interface ScenarioResult {
   governanceCheck?: GovernanceCheckResult;
   requestedProduct?: { id: string; name: string };
   alternatives?: AlternativeReview[];
+  alternativesNote?: string;
+  readyToOrderEur?: number;
   /** The one or two quote lines actually relevant to this scenario's narrative, when the
    *  full quote (e.g. scenario 3/4's multi-candidate probe) contains unrelated noise lines. */
   relevantLines?: QuoteLine[];
@@ -283,6 +285,8 @@ export async function scenario3StockOutSubstitution(client: AimoClient = buildCl
     `${unavailable.requested_product_name} is unavailable. Aimo returns ${unavailable.alternatives.length} ranked, fully-disclosed alternative(s).`
   );
 
+  const alternativesNote = `${SUBSTITUTION_CANDIDATES.length} candidate SKUs were checked for availability — only the one that came back out of stock had a real substitute registered. The backend returned ${unavailable.alternatives.length} actual substitute(s) for that one product, from its own substitutions list (not the other 7 candidates).`;
+
   const { chosen, rejected } = pickAllowedAlternative(HOTEL_ESPOO_POLICY, unavailable.alternatives);
   const rejectedIds = new Set(rejected.map((r) => r.alt.product_id));
 
@@ -314,8 +318,8 @@ export async function scenario3StockOutSubstitution(client: AimoClient = buildCl
     id: "3",
     name,
     tagline,
-    outcome: chosen ? "confirmed_auto" : "no_viable_alternative",
-    headline: chosen ? `Substituted with ${chosen.name}` : "No suitable alternative",
+    outcome: chosen ? "substituted" : "no_viable_alternative",
+    headline: chosen ? `Substitute identified: ${chosen.name}` : "No suitable alternative",
     subheadline: `Requested product unavailable: ${unavailable.requested_product_name}`,
     transactionId: quote.quote_id,
     transactionIdKind: "quote",
@@ -327,7 +331,8 @@ export async function scenario3StockOutSubstitution(client: AimoClient = buildCl
     order: null,
     audit: [],
     requestedProduct: { id: unavailable.requested_product_id, name: unavailable.requested_product_name },
-    alternatives
+    alternatives,
+    alternativesNote
   };
 }
 
@@ -367,7 +372,7 @@ export async function scenario4PartialAvailability(client: AimoClient = buildCli
       id: "4",
       name,
       tagline,
-      outcome: "confirmed_auto",
+      outcome: "both_ready",
       headline: "Both lines in stock right now",
       subheadline: "Nothing partial to demonstrate against the live backend at this moment.",
       transactionId: quote.quote_id,
@@ -383,14 +388,23 @@ export async function scenario4PartialAvailability(client: AimoClient = buildCli
     };
   }
 
-  step(steps, "result", "complete", "Per-line outcome", `${milkLine.requested_product_name} ready to order now; ${otherLine.requested_product_name} needs a substitution decision — handled independently, not as one failed basket.`);
+  const readyLines = [milkLine, otherLine].filter((l) => l.status === "available");
+  const readyToOrderEur = Math.round(readyLines.reduce((sum, l) => sum + (l.line_total_eur ?? 0), 0) * 100) / 100;
+
+  step(
+    steps,
+    "result",
+    "complete",
+    "Per-line outcome",
+    `${milkLine.requested_product_name} is eligible to order now; ${otherLine.requested_product_name} needs a substitution decision — handled independently, not as one failed basket. This is a quote, not an order — nothing has been placed yet.`
+  );
 
   return {
     id: "4",
     name,
     tagline,
     outcome: "partial",
-    headline: `${milkLine.status === "available" ? "1" : "0"} of 2 lines ready to order`,
+    headline: `${readyLines.length} of 2 lines ready to order`,
     subheadline: `${milkLine.requested_product_name} — ${milkLine.status}; ${otherLine.requested_product_name} — ${otherLine.status}`,
     transactionId: quote.quote_id,
     transactionIdKind: "quote",
@@ -401,7 +415,8 @@ export async function scenario4PartialAvailability(client: AimoClient = buildCli
     quote,
     order: null,
     audit: [],
-    relevantLines: [milkLine, otherLine]
+    relevantLines: [milkLine, otherLine],
+    readyToOrderEur
   };
 }
 

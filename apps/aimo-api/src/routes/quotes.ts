@@ -132,8 +132,8 @@ export function registerQuoteRoutes(app: FastifyInstance) {
     const expiresAt = new Date(issuedAt.getTime() + QUOTE_TTL_MS);
 
     await query(
-      `INSERT INTO quotes (id, buyer_id, lines, issued_at, expires_at, status, total_eur) VALUES ($1,$2,$3,$4,$5,'active',$6)`,
-      [quoteId, buyerId, JSON.stringify(quoteLines), issuedAt.toISOString(), expiresAt.toISOString(), totalEur]
+      `INSERT INTO quotes (id, buyer_id, lines, issued_at, expires_at, requested_delivery_date, status, total_eur) VALUES ($1,$2,$3,$4,$5,$6,'active',$7)`,
+      [quoteId, buyerId, JSON.stringify(quoteLines), issuedAt.toISOString(), expiresAt.toISOString(), requestedDate, totalEur]
     );
 
     const quote: Quote = {
@@ -141,6 +141,7 @@ export function registerQuoteRoutes(app: FastifyInstance) {
       buyer_id: buyerId,
       issued_at: issuedAt.toISOString(),
       expires_at: expiresAt.toISOString(),
+      requested_delivery_date: requestedDate,
       status: "active",
       lines: quoteLines,
       total_eur: totalEur
@@ -160,6 +161,7 @@ export function registerQuoteRoutes(app: FastifyInstance) {
       buyer_id: row.buyer_id,
       issued_at: new Date(row.issued_at).toISOString(),
       expires_at: new Date(row.expires_at).toISOString(),
+      requested_delivery_date: row.requested_delivery_date,
       status,
       lines: row.lines,
       total_eur: Number(row.total_eur)

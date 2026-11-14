@@ -35,9 +35,12 @@ CREATE TABLE IF NOT EXISTS quotes (
   lines JSONB NOT NULL,
   issued_at TIMESTAMPTZ NOT NULL,
   expires_at TIMESTAMPTZ NOT NULL,
+  requested_delivery_date TEXT,
   status TEXT NOT NULL DEFAULT 'active',
   total_eur NUMERIC NOT NULL
 );
+
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS requested_delivery_date TEXT;
 
 CREATE TABLE IF NOT EXISTS orders (
   id TEXT PRIMARY KEY,

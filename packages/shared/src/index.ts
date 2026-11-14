@@ -79,6 +79,7 @@ export interface Quote {
   buyer_id: string;
   issued_at: string;
   expires_at: string;
+  requested_delivery_date: string;
   status: "active" | "expired" | "consumed";
   lines: QuoteLine[];
   total_eur: number;
