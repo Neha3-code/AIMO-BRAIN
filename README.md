@@ -6,10 +6,10 @@ challenge. Two independent sides talking over HTTP:
 - **`apps/aimo-api`** — the actual deliverable: the interface Valio Aimo
   exposes so any authorized external purchasing agent can look up products,
   get a binding quote, place an order, and know when a human has to sign
-  off. Deploy target: **Railway**.
+  off. **Live: https://aimo-api.onrender.com**
 - **`apps/buyer-demo`** — a reference buyer-agent + demo UI that calls
-  `aimo-api` over HTTP and applies its own, separate guardrails. Deploy
-  target: **Vercel/Netlify**.
+  `aimo-api` over HTTP and applies its own, separate guardrails.
+  **Live: https://buyer-demo.vercel.app**
 - **`packages/shared`** — the TypeScript contract (trust envelope, quote,
   order, audit event) both sides import.
 - **Database**: **Neon** Postgres, used by `aimo-api` only, over Neon's HTTP
