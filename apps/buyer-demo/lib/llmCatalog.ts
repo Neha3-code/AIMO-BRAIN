@@ -13,6 +13,19 @@ import type { ProductLookupResult } from "@aimo/shared";
 import catalogIndex from "../data/catalog-index.json";
 import { chatJSON } from "./llm";
 import { buildClient } from "./scenarios";
+import { HOTEL_ESPOO_POLICY } from "./policyEngine";
+
+/** Mirrors page.tsx's client-side check: a product that reads as relevant to the need but is
+ *  out of stock or contains a banned allergen must never be presented as if it were a clean
+ *  recommendation — the AI's own "why" would otherwise contradict the buyer policy that blocks it. */
+function policyCaveat(r: ProductLookupResult): string | null {
+  const bannedHits = r.allergens.filter((a) => a.relation === "CONTAINS" && HOTEL_ESPOO_POLICY.bannedAllergenCodes.includes(a.code)).map((a) => a.code);
+  const reasons: string[] = [];
+  if (r.envelope.claim.availability.status === "out_of_stock") reasons.push("it is out of stock");
+  if (bannedHits.length > 0) reasons.push(`it contains banned allergen code${bannedHits.length > 1 ? "s" : ""} ${bannedHits.join(", ")}`);
+  if (reasons.length === 0) return null;
+  return `Potential catalogue match — blocked by buyer policy. This product looks relevant, but ${reasons.join(" and ")}. It can't be ordered directly.`;
+}
 
 type Row = [id: string, en: string, fi: string];
 const ROWS = catalogIndex as Row[];
@@ -155,7 +168,7 @@ Return JSON: {"picks": [{"id": "<id from list>", "why": "<max 12 words: why it f
   const results = picks
     .map((p) => {
       const r = live.get(String(p.id));
-      return r ? { ...r, ai_reason: p.why } : null;
+      return r ? { ...r, ai_reason: policyCaveat(r) ?? p.why } : null;
     })
     .filter((r): r is ProductLookupResult & { ai_reason: string } => r !== null);
 
@@ -236,10 +249,10 @@ Return JSON: {"themes": [{"index": <theme index>, "pitch": "...", "picks": [{"id
       .map((c) => ({
         title: c.theme.title,
         pitch: c.pitch,
-        products: preferAvailable(c.picks.map((p) => String(p.id)), live, 3).map((id) => ({
-          ...live.get(id)!,
-          ai_reason: c.picks.find((p) => String(p.id) === id)?.why
-        }))
+        products: preferAvailable(c.picks.map((p) => String(p.id)), live, 3).map((id) => {
+          const r = live.get(id)!;
+          return { ...r, ai_reason: policyCaveat(r) ?? c.picks.find((p) => String(p.id) === id)?.why };
+        })
       }))
       .filter((t) => t.products.length > 0)
   };

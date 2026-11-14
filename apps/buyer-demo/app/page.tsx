@@ -254,8 +254,12 @@ function formatStockQuantity(status: string, quantity: number | null): string {
   return `${quantity.toLocaleString()} units`;
 }
 
-function Pill({ status, children }: { status: StepStatus; children: React.ReactNode }) {
-  return <span className={`pill pill-${status}`}>{children}</span>;
+function Pill({ status, children, title }: { status: StepStatus; children: React.ReactNode; title?: string }) {
+  return (
+    <span className={`pill pill-${status}`} title={title}>
+      {children}
+    </span>
+  );
 }
 
 function Hero({ result }: { result: ScenarioResult }) {
@@ -1100,21 +1104,30 @@ function ProductCard({
   return (
     <div className={`explorer-item ${isSelected ? "explorer-item-selected" : ""}`}>
       <div className="explorer-item-name">{r.name}</div>
-      {aiReason && <div className="ai-reason">✦ {aiReason}</div>}
+      {aiReason && (
+        <div className={`ai-reason ${aiReason.startsWith("Potential catalogue match") ? "ai-reason-blocked" : ""}`}>
+          {aiReason.startsWith("Potential catalogue match") ? "⚠" : "✦"} {aiReason}
+        </div>
+      )}
       <div className="explorer-item-price-row">
         <span className="explorer-item-price">{r.envelope.claim.price ? formatEur(r.envelope.claim.price.amount) : "price unavailable"}</span>
-        <Pill status={outOfStock ? "blocked" : "passed"}>{r.envelope.claim.availability.status.replace(/_/g, " ")}</Pill>
+        <Pill
+          status={outOfStock ? "blocked" : "passed"}
+          title={r.envelope.claim.availability.status === "terminal_supplier" ? "Available — fulfilled directly by the supplier, not from Aimo's own stock." : undefined}
+        >
+          {r.envelope.claim.availability.status.replace(/_/g, " ")}
+        </Pill>
       </div>
       <div className="explorer-item-grid">
-        <div className="explorer-metric">
-          <div className="explorer-metric-value">{carbon !== null ? fmtNum(carbon) : "—"}</div>
-          <div className="explorer-metric-label">kg CO₂e/kg</div>
+        <div className="explorer-metric" title={carbon === null ? "Carbon footprint not disclosed for this product." : undefined}>
+          <div className="explorer-metric-value">{carbon !== null ? `${fmtNum(carbon)} kg CO₂e/kg` : "—"}</div>
+          <div className="explorer-metric-label">Carbon footprint</div>
         </div>
-        <div className="explorer-metric">
+        <div className="explorer-metric" title={reliability === null ? "No historical delivery data — not the same as poor reliability." : undefined}>
           <div className="explorer-metric-value">{reliability !== null ? fmtPct(reliability) : "no history"}</div>
           <div className="explorer-metric-label">On-time delivery</div>
         </div>
-        <div className="explorer-metric">
+        <div className="explorer-metric" title={containsCodes.length === 0 ? "No allergen codes declared for this product." : undefined}>
           <div className="explorer-metric-value">{containsCodes.length > 0 ? containsCodes.join(", ") : "none"}</div>
           <div className="explorer-metric-label">Allergen codes</div>
         </div>
@@ -1151,7 +1164,14 @@ function ProductCard({
 
 function StockTag({ r }: { r: ProductLookupResult }) {
   const status = r.envelope.claim.availability.status;
-  return <Pill status={status === "out_of_stock" ? "blocked" : "passed"}>{status.replace(/_/g, " ")}</Pill>;
+  return (
+    <Pill
+      status={status === "out_of_stock" ? "blocked" : "passed"}
+      title={status === "terminal_supplier" ? "Available — fulfilled directly by the supplier, not from Aimo's own stock." : undefined}
+    >
+      {status.replace(/_/g, " ")}
+    </Pill>
+  );
 }
 
 function AiBadge() {
@@ -1206,6 +1226,7 @@ function SeasonalSuggestionsCard({
                     <span className="seasonal-product-meta">
                       {r.envelope.claim.price ? formatEur(r.envelope.claim.price.amount) : "—"} <StockTag r={r} />
                     </span>
+                    {r.ai_reason?.startsWith("Potential catalogue match") && <div className="ai-reason ai-reason-blocked">⚠ {r.ai_reason}</div>}
                   </button>
                 ))}
                 <button type="button" className="run-btn run-btn-sm seasonal-plan-btn" onClick={() => onPlanTheme(t)}>
@@ -1545,10 +1566,10 @@ function ProductExplorer() {
 
   return (
     <div className="workspace explorer-workspace" id="explorer">
-      <h2 style={{ marginTop: 0 }}>Test AIMO BRAIN with any product</h2>
+      <h2 style={{ marginTop: 0 }}>Test AIMO BRAIN with real products</h2>
       <p className="explorer-lede">
-        Search the live Junction26 product catalogue — 17,546 real SKUs — and watch the AI purchasing workflow make its
-        decisions: the exact same quote → buyer policy → order pipeline as the scenarios above, nothing special-cased.
+        Search the Junction26 sandbox catalogue of 17,546 real SKUs. Explore products, find compliant substitutes and see the
+        same autonomous purchasing workflow used in the scenarios: quote → buyer policy → supplier policy → order.
       </p>
 
       <div className="explorer-tabs" role="tablist">
@@ -1580,7 +1601,8 @@ function ProductExplorer() {
         </button>
       </div>
       <p className="explorer-lede" style={{ marginBottom: 12 }}>
-        Keep the purchase evaluation and its decision evidence underneath the selected product or planned basket.
+        Every purchase evaluation uses the same policy checks and produces auditable decision evidence, shown underneath the
+        selected product or planned basket.
       </p>
 
       {explorerTab === "search" && (
@@ -1625,8 +1647,10 @@ function ProductExplorer() {
             </button>
           </form>
           <label className="ai-toggle">
-            <input type="checkbox" checked={aiMode} onChange={(e) => setAiMode(e.target.checked)} /> AI search — understands needs, not just
-            product names (NVIDIA Nemotron via Verda). Off = literal name match.
+            <input type="checkbox" checked={aiMode} onChange={(e) => setAiMode(e.target.checked)} />{" "}
+            {aiMode
+              ? "AI search: interprets the kitchen's needs and suggests relevant catalogue products (NVIDIA Nemotron via Verda)."
+              : "Catalogue search: matches product names only. Turn on AI search to interpret a need instead of an exact name."}
           </label>
 
           {searchError && <p className="mock-note explorer-error">{searchError}</p>}
