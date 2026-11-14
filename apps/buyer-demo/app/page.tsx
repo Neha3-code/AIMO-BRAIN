@@ -160,6 +160,24 @@ function BrainIcon() {
   );
 }
 
+function SearchIcon() {
+  return (
+    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round">
+      <circle cx="11" cy="11" r="7.5" />
+      <path d="m20.5 20.5-4.2-4.2" />
+    </svg>
+  );
+}
+
+function ChefHatIcon() {
+  return (
+    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 14.5a4 4 0 1 1 1.2-7.8 4 4 0 0 1 7.6 0A4 4 0 1 1 17 14.5V20H7v-5.5Z" />
+      <path d="M7 17h10M10.5 11v3M13.5 11v3" />
+    </svg>
+  );
+}
+
 const STAGE_LABEL: Record<string, string> = {
   request: "Buyer request",
   quote: "Product search and quote",
@@ -1068,119 +1086,256 @@ export default function Page() {
   }
 
   return (
-    <div className="wrap">
-      <div className="brand-row">
-        <div className="brand-left">
-          <span className="brand-icon">
-            <BrainIcon />
-          </span>
-          <span className="brand-word">AIMO BRAIN</span>
-        </div>
-        <span className="badge-sandbox">Junction26 · 2026</span>
-      </div>
-
-      <h1>Procurement that thinks. Trade that you can trust.</h1>
-      <p className="lede">Autonomous AI purchasing with independent buyer and supplier controls.</p>
-
-      <div className="cta-row">
-        <a className="cta-btn cta-btn-primary" href="#scenarios">
-          Explore demo
-        </a>
-        <a className="cta-btn cta-btn-secondary" href="#explorer">
-          Try it yourself
-        </a>
-      </div>
-
-      <div className="role-grid">
-        <div className="role-card">
-          <span className="role-icon role-icon-buyer">
-            <RoleIcon name="buyer" />
-          </span>
-          <div className="role-title">Buyer AI</div>
-          <div className="role-desc">Buyer rules — budget, allergens, delivery dates, recipe chemistry and carbon limits.</div>
-          <span className="role-tag">Buyer-controlled</span>
-        </div>
-        <div className="role-card">
-          <span className="role-icon role-icon-aimo">
-            <RoleIcon name="aimo" />
-          </span>
-          <div className="role-title">Aimo AI</div>
-          <div className="role-desc">Supplier rules — credit limits and approvals. Discloses carbon footprint and delivery reliability.</div>
-          <span className="role-tag">Supplier-controlled</span>
-        </div>
-        <div className="role-card">
-          <span className="role-icon role-icon-audit">
-            <RoleIcon name="audit" />
-          </span>
-          <div className="role-title">Audit</div>
-          <div className="role-desc">Every decision — who decided what, why, and when.</div>
-          <span className="role-tag">Independent evidence</span>
+    <div className="site">
+      <div className="utility-bar">
+        <div className="container utility-inner">
+          <nav className="utility-tabs" aria-label="Sections">
+            <a className="utility-tab utility-tab-active" href="#top">
+              <BrainIcon /> AIMO BRAIN
+            </a>
+            <a className="utility-tab" href="#scenarios">
+              <ScenarioIcon name="cart" /> Scenarios
+            </a>
+            <a className="utility-tab" href="#explorer">
+              <ScenarioIcon name="box" /> Try it yourself
+            </a>
+            <a className="utility-tab" href="#roles">
+              <RoleIcon name="audit" /> Audit
+            </a>
+          </nav>
+          <span className="utility-lang">Junction26 · EN</span>
         </div>
       </div>
 
-      <p className="problem">
-        <strong>The problem:</strong> how can an autonomous buyer agent trade with a supplier safely, without either side
-        controlling the other's policies? Price and stock below are live from Valio Aimo's real Junction26 challenge
-        sandbox — every claim is clearly labeled <code>mock_verified</code>, never presented as a production feed.
-      </p>
-
-      <div className="section-title" id="scenarios">
-        Choose a scenario
-      </div>
-      <div className="scenario-tabs">
-        {SCENARIO_CARDS.map((s) => (
-          <button
-            key={s.id}
-            className={`scenario-tab scenario-tab-${s.tone} ${activeTab === s.id ? "scenario-tab-active" : ""}`}
-            onClick={() => setActiveTab(s.id)}
-          >
-            <span className="scenario-tab-icon">
-              <ScenarioIcon name={s.icon} />
-            </span>
-            {s.index} {s.tabLabel}
-          </button>
-        ))}
-      </div>
-
-      {SCENARIO_CARDS.filter((s) => s.id === activeTab).map((s) => {
-        const result = results[s.id];
-        return (
-          <div className={`scenario-panel scenario-card scenario-card-${s.tone}`} key={s.id}>
-            <div className="scenario-card-top">
-              <span className="scenario-icon">
-                <ScenarioIcon name={s.icon} />
-              </span>
-              <span className="scenario-index">
-                {s.index} · {s.badge}
-              </span>
-            </div>
-            <h3>{s.title}</h3>
-            <p>{s.description}</p>
-            <span className="scenario-outcome">Outcome: {s.outcome}</span>
-            <button className="run-btn" onClick={() => run(s.id)} disabled={loading[s.id]}>
-              {loading[s.id] ? "Running…" : "Run scenario"}
-            </button>
-
-            {result &&
-              ("error" in result ? (
-                <div className="workspace">
-                  <Pill status="blocked">Error</Pill>
-                  <div className="timeline-detail" style={{ marginTop: 8 }}>
-                    {(result as any).message ?? (result as any).error}
-                  </div>
-                </div>
-              ) : (
-                <TransactionWorkspace result={result} />
-              ))}
+      <header className="site-header">
+        <div className="container header-inner">
+          <a href="#top" className="header-logo" aria-label="Valio Aimo — AIMO BRAIN">
+            <img src="/valio-aimo-logo.svg" alt="Valio Aimo" />
+          </a>
+          <nav className="main-nav" aria-label="Main">
+            <a href="#how">How it works</a>
+            <a href="#roles">Who decides</a>
+            <a href="#scenarios">Scenarios</a>
+            <a href="#explorer">Catalog</a>
+            <a href="#help">Resources</a>
+          </nav>
+          <div className="header-actions">
+            <a href="#explorer" className="header-search" aria-label="Search the catalog">
+              <SearchIcon />
+            </a>
+            <a href="#scenarios" className="btn btn-lime">
+              Explore demo
+            </a>
           </div>
-        );
-      })}
+        </div>
+      </header>
 
-      <ProductExplorer />
+      <section className="hero-banner" id="top">
+        <div className="container hero-banner-inner">
+          <h1>AIMO BRAIN x Valio Aimo</h1>
+          <p className="lede">
+            Procurement that thinks. Trade that you can trust. Autonomous AI purchasing agents that trade with Valio Aimo — with
+            independent buyer and supplier controls, and an audit trail for every decision.
+          </p>
+          <div className="cta-row">
+            <a className="btn btn-lime" href="#scenarios">
+              Explore demo
+            </a>
+            <a className="btn btn-white" href="#explorer">
+              Try it yourself
+            </a>
+          </div>
+        </div>
+      </section>
 
-      <footer className="note">
-        All price, stock and allergen data is from Valio Aimo's Junction26 challenge sandbox — not a production feed. See README.md for
-        what's real, what's inferred, and what's invented for this demo.
+      <section className="aimo-letters" id="how">
+        <div className="container">
+          <div className="letters-grid">
+            <div className="letter-col">
+              <span className="letter">A</span>
+              <span className="letter-text">Autonomous purchasing that actually decides</span>
+            </div>
+            <div className="letter-col">
+              <span className="letter">I</span>
+              <span className="letter-text">Independent buyer and supplier policies</span>
+            </div>
+            <div className="letter-col">
+              <span className="letter">M</span>
+              <span className="letter-text">Mock-verified, live sandbox data</span>
+            </div>
+            <div className="letter-col">
+              <span className="letter">O</span>
+              <span className="letter-text">Open audit trail of every decision</span>
+            </div>
+          </div>
+          <div className="letters-cta">
+            <a className="btn btn-white" href="#roles">
+              Learn more
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section className="section section-lavender" id="roles">
+        <div className="container">
+          <h2 className="section-heading">Three parties, one transaction</h2>
+          <div className="role-grid">
+            <div className="role-card">
+              <h3 className="role-title">Buyer AI</h3>
+              <p className="role-desc">
+                Applies the kitchen&apos;s own rules — budget, allergens, delivery dates, recipe chemistry and carbon limits. Aimo never
+                sees or overrides them.
+              </p>
+              <span className="role-tag">Buyer-controlled</span>
+            </div>
+            <div className="role-card">
+              <h3 className="role-title">Aimo AI</h3>
+              <p className="role-desc">
+                Applies supplier rules — credit limits and human approvals — and discloses carbon footprint and delivery reliability on
+                every quote line.
+              </p>
+              <span className="role-tag">Supplier-controlled</span>
+            </div>
+            <div className="role-card">
+              <h3 className="role-title">Audit</h3>
+              <p className="role-desc">
+                Records every decision — who decided what, why, and when — as independent evidence both sides can rely on.
+              </p>
+              <span className="role-tag">Independent evidence</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="section section-light" id="scenarios">
+        <div className="container">
+          <h2 className="section-heading">Choose a scenario</h2>
+          <p className="section-lede">
+            <strong>The problem:</strong> how can an autonomous buyer agent trade with a supplier safely, without either side controlling
+            the other&apos;s policies? Price and stock are live from Valio Aimo&apos;s Junction26 challenge sandbox — every claim is labeled{" "}
+            <code>mock_verified</code>, never presented as a production feed.
+          </p>
+          <div className="scenario-tabs" role="tablist">
+            {SCENARIO_CARDS.map((s) => (
+              <button
+                key={s.id}
+                role="tab"
+                aria-selected={activeTab === s.id}
+                className={`scenario-tab scenario-tab-${s.tone} ${activeTab === s.id ? "scenario-tab-active" : ""}`}
+                onClick={() => setActiveTab(s.id)}
+              >
+                <span className="scenario-tab-icon">
+                  <ScenarioIcon name={s.icon} />
+                </span>
+                <span className="scenario-tab-index">{s.index}</span> {s.tabLabel}
+              </button>
+            ))}
+          </div>
+
+          {SCENARIO_CARDS.filter((s) => s.id === activeTab).map((s) => {
+            const result = results[s.id];
+            return (
+              <div className="scenario-panel-wrap" key={s.id}>
+                <div className={`scenario-panel scenario-panel-${s.tone}`}>
+                  <span className="scenario-icon">
+                    <ScenarioIcon name={s.icon} />
+                  </span>
+                  <div className="scenario-panel-body">
+                    <span className="scenario-index">
+                      {s.index} · {s.badge}
+                    </span>
+                    <h3>{s.title}</h3>
+                    <p>{s.description}</p>
+                    <span className="scenario-outcome">Outcome: {s.outcome}</span>
+                  </div>
+                  <button className="run-btn" onClick={() => run(s.id)} disabled={loading[s.id]}>
+                    {loading[s.id] ? "Running…" : "Run scenario"}
+                  </button>
+                </div>
+
+                {result &&
+                  ("error" in result ? (
+                    <div className="workspace">
+                      <Pill status="blocked">Error</Pill>
+                      <div className="timeline-detail" style={{ marginTop: 8 }}>
+                        {(result as any).message ?? (result as any).error}
+                      </div>
+                    </div>
+                  ) : (
+                    <TransactionWorkspace result={result} />
+                  ))}
+              </div>
+            );
+          })}
+
+        </div>
+      </section>
+
+      <section className="section section-white">
+        <div className="container">
+          <ProductExplorer />
+        </div>
+      </section>
+
+      <section className="section section-light" id="help">
+        <div className="container">
+          <h2 className="section-heading section-heading-left">
+            <span className="heading-icon">
+              <ChefHatIcon />
+            </span>
+            How can we help?
+          </h2>
+          <div className="help-grid">
+            <div className="help-col">
+              <h3>Live API</h3>
+              <p>The interface Valio Aimo exposes to any authorized external purchasing agent — products, quotes, orders, approvals.</p>
+              <a className="btn btn-petrol" href="https://aimo-api.onrender.com/health" target="_blank" rel="noreferrer">
+                API status
+              </a>
+            </div>
+            <div className="help-col">
+              <h3>Run a scenario</h3>
+              <p>Five end-to-end flows, from fully autonomous ordering to a two-sided human approval and recipe-safe substitution.</p>
+              <a className="btn btn-petrol" href="#scenarios">
+                Scenarios
+              </a>
+            </div>
+            <div className="help-col">
+              <h3>Try any product</h3>
+              <p>Search all 17,546 real catalog SKUs and push any of them through the exact same buyer-agent pipeline.</p>
+              <a className="btn btn-petrol" href="#explorer">
+                Catalog
+              </a>
+            </div>
+            <div className="help-col">
+              <h3>What&apos;s real</h3>
+              <p>See the README for what is live from the sandbox, what is inferred from docs, and what is invented for this demo.</p>
+              <a className="btn btn-petrol" href="#footer">
+                Data notes
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="status-strip">
+        <div className="container status-strip-inner">
+          <span>
+            Sandbox today: <strong>aimo-api</strong> live and <strong>Junction26 catalog</strong> 17,546 SKUs
+          </span>
+          <a href="#scenarios">Run all scenarios</a>
+        </div>
+      </div>
+
+      <footer className="site-footer" id="footer">
+        <div className="container footer-inner">
+          <img src="/valio-aimo-logo-white.svg" alt="Valio Aimo" className="footer-logo" />
+          <p className="note">
+            AIMO BRAIN — a Junction 2026 hackathon project for the Valio Aimo challenge. All price, stock and allergen data is from Valio
+            Aimo&apos;s Junction26 challenge sandbox — not a production feed. See README.md for what&apos;s real, what&apos;s inferred, and
+            what&apos;s invented for this demo.
+          </p>
+        </div>
       </footer>
     </div>
   );
