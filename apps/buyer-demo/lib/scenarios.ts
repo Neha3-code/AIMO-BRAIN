@@ -286,6 +286,12 @@ async function suggestFromCategory(
   };
 }
 
+/** With no registered substitutes, lead with the similar products when there are any to review. */
+function similarHeadline(fallback: { suggestions: AlternativeReview[] } | null, otherwise: string): string {
+  const n = fallback?.suggestions.length ?? 0;
+  return n > 0 ? `No registered substitutes — ${n} similar in-stock product${n === 1 ? "" : "s"} to review` : otherwise;
+}
+
 async function withAudit(order: Order | null, client: AimoClient, steps: ScenarioStep[]): Promise<AuditEvent[]> {
   if (!order) return [];
   step(steps, "audit", "info", "Audit trail recorded", `${order.order_id}: evidence trail available below.`);
@@ -719,7 +725,7 @@ export async function scenario5RecipeChemistry(client: AimoClient = buildClient(
       name,
       tagline,
       outcome: "no_viable_alternative",
-      headline: originalOutOfStock ? "Out of stock — and no registered substitutes" : "No registered substitutes found",
+      headline: similarHeadline(fallback, originalOutOfStock ? "Out of stock — and no registered substitutes" : "No registered substitutes found"),
       subheadline: originalOutOfStock
         ? `${subs.name} is out of stock, and Aimo's catalogue has no registered substitutes for it. It can't be ordered right now and there is nothing for the buyer agent to switch to.`
         : `Aimo's catalogue has no registered substitutes for ${subs.name}. No alternatives were available for the buyer agent to evaluate.`,
@@ -806,7 +812,7 @@ export async function runCustomPurchase(productId: string, qty: number, client: 
         name,
         tagline,
         outcome: "no_viable_alternative",
-        headline: "Out of stock — order not placed",
+        headline: similarHeadline(fallback, "Out of stock — order not placed"),
         subheadline: `${line.requested_product_name} is out of stock, and Aimo's catalogue has no registered substitutes for it. Nothing was ordered.`,
         transactionId: quote.quote_id,
         transactionIdKind: "quote",

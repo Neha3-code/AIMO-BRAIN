@@ -2076,17 +2076,22 @@ footer .note {
   }
 }
 
-/* Low-emphasis action: used when a product is known to have no registered substitutes. */
-.run-btn-muted {
-  background: var(--white);
+/* Low-key empty state: "no registered substitutes" is context, not the result to look at. */
+.subs-empty-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-bottom: 20px;
+  padding: 10px 14px;
+  border: 1px dashed var(--border-strong);
   color: var(--muted);
-  border-color: var(--border);
-  font-weight: 500;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
-.run-btn-muted:hover:not(:disabled) {
-  background: var(--light-blue);
-  border-color: var(--border-strong);
+.subs-empty-title {
+  font-weight: 700;
 }
 
 /* Draws the eye to same-category suggestions when there are any to review. */

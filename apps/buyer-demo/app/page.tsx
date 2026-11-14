@@ -435,30 +435,17 @@ function RecipeMethodologyNote() {
 
 function NoRegisteredSubstitutes({ result }: { result: ScenarioResult }) {
   if (!result.noRegisteredSubstitutes || !result.requestedProduct) return null;
+  const hasSuggestions = (result.categorySuggestions?.length ?? 0) > 0;
+  // Deliberately low-key: an empty result is context, not the thing to look at.
   return (
-    <div className="detail-card">
-      <h4>{result.requestedProductOutOfStock ? "Out of stock — no registered substitutes" : "No registered substitutes found"}</h4>
-      <div className="kv-row">
-        <span className="k">Original product</span>
-        <span className="v">
-          {result.requestedProduct.name} ({result.requestedProduct.id})
-        </span>
-      </div>
-      {result.requestedProductOutOfStock && (
-        <div className="kv-row">
-          <span className="k">Stock</span>
-          <span className="v">
-            <Pill status="blocked">out of stock</Pill>
-          </span>
-        </div>
-      )}
-      <p className="mock-note" style={{ marginTop: 8 }}>
-        {result.requestedProductOutOfStock ? "This product is out of stock, so it can't be ordered right now. " : ""}
-        Aimo's catalogue has no registered substitutes for this product (only about 1% of the 17,546 SKUs have any), so the
-        buyer agent had nothing it may substitute automatically. No substitute was selected and no order was placed.
-        {result.categorySuggestions && result.categorySuggestions.length > 0 && " Same-category suggestions for a human to review are shown below."}
-      </p>
-      <Pill status="info">no substitute available</Pill>
+    <div className="subs-empty-note">
+      <span className="subs-empty-title">Registered substitutes: none</span>
+      {result.requestedProductOutOfStock && <Pill status="blocked">original out of stock</Pill>}
+      <span>
+        The catalog registers no substitutes for {result.requestedProduct.name} ({result.requestedProduct.id}) — only about 1% of the
+        17,546 SKUs have any — so nothing was auto-substituted and no order was placed.
+        {hasSuggestions && " See the similar products above."}
+      </span>
     </div>
   );
 }
@@ -566,7 +553,13 @@ function CategorySuggestions({ result }: { result: ScenarioResult }) {
           {count} in-stock suggestion{count === 1 ? "" : "s"} · {passing} pass{passing === 1 ? "es" : ""} this kitchen&apos;s checks
         </div>
       )}
-      <h4>Same-category suggestions — not registered substitutes</h4>
+      <h4>Similar products in the same category, evaluated by the buyer agent</h4>
+      <div className="kv-row">
+        <span className="k">Original product</span>
+        <span className="v">
+          {result.requestedProduct.name} ({result.requestedProduct.id})
+        </span>
+      </div>
       {result.categorySuggestionsNote && <p className="mock-note">{result.categorySuggestionsNote}</p>}
       {result.categorySuggestions.length === 0 ? (
         <p className="mock-note">No other product in this category is orderable right now.</p>
@@ -907,8 +900,8 @@ function TransactionWorkspace({ result }: { result: ScenarioResult }) {
       <PolicyPanels result={result} />
       <DeliveryDateCard result={result} />
       <SustainabilityCard result={result} />
-      <NoRegisteredSubstitutes result={result} />
       <CategorySuggestions result={result} />
+      <NoRegisteredSubstitutes result={result} />
       <AlternativesTable result={result} />
       <BasketOutcome result={result} />
       <GovernanceCheckCard result={result} />
@@ -974,8 +967,8 @@ function ProductCard({
         <div className="explorer-subs-note">
           {noSubs
             ? outOfStock
-              ? "Out of stock and no registered substitutes — same-category products can be suggested instead."
-              : "No registered substitutes in the catalog — same-category products can be suggested instead."
+              ? "Out of stock · no registered substitutes"
+              : "No registered substitutes"
             : `${subCount} registered substitute${subCount === 1 ? "" : "s"} in the catalog.`}
         </div>
       )}
@@ -985,12 +978,12 @@ function ProductCard({
         </button>
         <button
           type="button"
-          className={noSubs ? "run-btn run-btn-muted run-btn-sm" : outOfStock ? "run-btn run-btn-sm" : "run-btn run-btn-secondary run-btn-sm"}
+          className={outOfStock ? "run-btn run-btn-sm" : "run-btn run-btn-secondary run-btn-sm"}
           onClick={onFindSubstitutes}
           disabled={substitutesLoading}
           title={noSubs ? "No registered substitutes — shows same-category products checked against this kitchen's policy" : undefined}
         >
-          {substitutesLoading ? "Finding…" : noSubs ? "Suggest similar products" : "Find compliant substitutes"}
+          {substitutesLoading ? "Finding…" : noSubs ? "Find similar products" : "Find compliant substitutes"}
         </button>
       </div>
     </div>
