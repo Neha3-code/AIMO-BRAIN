@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { llmConfigured } from "../../../lib/llm";
+import { llmConfigured, withTimeout } from "../../../lib/llm";
 import { explainAudit, narrateResult } from "../../../lib/llmExplain";
 import type { ScenarioResult } from "../../../lib/scenarios";
 
@@ -11,8 +11,8 @@ export async function POST(req: NextRequest) {
   if (!result || typeof result !== "object") return NextResponse.json({ error: "missing_result" }, { status: 400 });
   if (!llmConfigured()) return NextResponse.json({ error: "llm_not_configured", message: "Set VERDA_INFERENCE_KEY to enable AI explanations." }, { status: 503 });
   try {
-    if (mode === "audit") return NextResponse.json(await explainAudit(result));
-    return NextResponse.json(await narrateResult(result));
+    if (mode === "audit") return NextResponse.json(await withTimeout(explainAudit(result), 50_000, "AI explanation took too long"));
+    return NextResponse.json(await withTimeout(narrateResult(result), 50_000, "AI explanation took too long"));
   } catch (err) {
     return NextResponse.json({ error: "explain_failed", message: (err as Error).message }, { status: 500 });
   }

@@ -45,7 +45,10 @@ export async function chatJSON<T>(
   if (!key) throw new Error("No Verda key: set VERDA_INFERENCE_KEY or VERDA_INFERENCE_KEY_FILE");
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 45_000);
+  // Features that chain two calls (recipe plan, seasonal, ai search) must stay well under the
+  // route's 60s maxDuration even in the worst case, or Vercel kills the function and serves its
+  // own HTML error page instead of JSON — hence the lower default than a single-call route needs.
+  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 20_000);
   try {
     const res = await fetch(`${BASE_URL}/chat/completions`, {
       method: "POST",
@@ -66,6 +69,21 @@ export async function chatJSON<T>(
     return parseJSONLoose<T>(content);
   } finally {
     clearTimeout(timer);
+  }
+}
+
+/** Route-level safety net: a route's `maxDuration` is a hard platform kill that serves an HTML
+ *  error page instead of JSON, which breaks `res.json()` on the client. Racing against a timeout
+ *  a few seconds short of that limit lets the route return a normal JSON error instead. */
+export async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer!);
   }
 }
 
