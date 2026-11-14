@@ -2075,3 +2075,33 @@ footer .note {
     animation: none;
   }
 }
+
+/* Low-emphasis action: used when a product is known to have no registered substitutes. */
+.run-btn-muted {
+  background: var(--white);
+  color: var(--muted);
+  border-color: var(--border);
+  font-weight: 500;
+}
+
+.run-btn-muted:hover:not(:disabled) {
+  background: var(--light-blue);
+  border-color: var(--border-strong);
+}
+
+/* Draws the eye to same-category suggestions when there are any to review. */
+.detail-card-highlight {
+  background: var(--lime-light);
+  border-left: 6px solid var(--lime);
+}
+
+.highlight-badge {
+  display: inline-block;
+  margin-bottom: 12px;
+  padding: 4px 12px;
+  background: var(--lime);
+  color: var(--petrol-dark);
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 999px;
+}

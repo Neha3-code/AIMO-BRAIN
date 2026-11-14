@@ -557,8 +557,15 @@ function AlternativeReviewTable({ alternatives }: { alternatives: AlternativeRev
 
 function CategorySuggestions({ result }: { result: ScenarioResult }) {
   if (!result.categorySuggestions || !result.requestedProduct) return null;
+  const count = result.categorySuggestions.length;
+  const passing = result.categorySuggestions.filter((a) => a.buyerDecision !== "rejected").length;
   return (
-    <div className="detail-card">
+    <div className={count > 0 ? "detail-card detail-card-highlight" : "detail-card"}>
+      {count > 0 && (
+        <div className="highlight-badge">
+          {count} in-stock suggestion{count === 1 ? "" : "s"} · {passing} pass{passing === 1 ? "es" : ""} this kitchen&apos;s checks
+        </div>
+      )}
       <h4>Same-category suggestions — not registered substitutes</h4>
       {result.categorySuggestionsNote && <p className="mock-note">{result.categorySuggestionsNote}</p>}
       {result.categorySuggestions.length === 0 ? (
@@ -920,13 +927,16 @@ function ProductCard({
   isSelected,
   onSelect,
   onFindSubstitutes,
-  substitutesLoading
+  substitutesLoading,
+  knownNoSubstitutes
 }: {
   r: ProductLookupResult;
   isSelected: boolean;
   onSelect: () => void;
   onFindSubstitutes: () => void;
   substitutesLoading: boolean;
+  /** Learned from an earlier lookup in this session — covers an aimo-api that doesn't report the count yet. */
+  knownNoSubstitutes: boolean;
 }) {
   const containsCodes = r.allergens.filter((a) => a.relation === "CONTAINS").map((a) => a.code);
   const bannedHits = bannedAllergenHits(r.allergens);
@@ -935,7 +945,7 @@ function ProductCard({
   const outOfStock = r.envelope.claim.availability.status === "out_of_stock";
   // Undefined when talking to an older aimo-api that doesn't report the count yet — keep the button enabled then.
   const subCount = r.registered_substitute_count;
-  const noSubs = subCount === 0;
+  const noSubs = subCount === 0 || knownNoSubstitutes;
   return (
     <div className={`explorer-item ${isSelected ? "explorer-item-selected" : ""}`}>
       <div className="explorer-item-name">{r.name}</div>
@@ -960,7 +970,7 @@ function ProductCard({
       {bannedHits.length > 0 && (
         <div className="explorer-warning">⚠ Contains banned allergen code(s) {bannedHits.join(", ")} — shown for inspection only; this kitchen's policy will block ordering it directly.</div>
       )}
-      {subCount !== undefined && (
+      {(subCount !== undefined || noSubs) && (
         <div className="explorer-subs-note">
           {noSubs
             ? outOfStock
@@ -975,7 +985,7 @@ function ProductCard({
         </button>
         <button
           type="button"
-          className={outOfStock ? "run-btn run-btn-sm" : "run-btn run-btn-secondary run-btn-sm"}
+          className={noSubs ? "run-btn run-btn-muted run-btn-sm" : outOfStock ? "run-btn run-btn-sm" : "run-btn run-btn-secondary run-btn-sm"}
           onClick={onFindSubstitutes}
           disabled={substitutesLoading}
           title={noSubs ? "No registered substitutes — shows same-category products checked against this kitchen's policy" : undefined}
@@ -997,6 +1007,14 @@ function ProductExplorer() {
   const [customResult, setCustomResult] = useState<ScenarioResult | { error: string; message?: string } | null>(null);
   const [running, setRunning] = useState(false);
   const [substitutesLoadingId, setSubstitutesLoadingId] = useState<string | null>(null);
+  const [noSubstituteIds, setNoSubstituteIds] = useState<Set<string>>(() => new Set());
+  function rememberNoSubstitutes(data: unknown) {
+    const d = data as Partial<ScenarioResult>;
+    if (d?.noRegisteredSubstitutes && d.requestedProduct) {
+      const id = d.requestedProduct.id;
+      setNoSubstituteIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+    }
+  }
 
   // Every action's outcome lands further down the page, so scroll to it once React has rendered it.
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -1075,6 +1093,7 @@ function ProductExplorer() {
       });
       const data = await res.json();
       setCustomResult(data);
+      rememberNoSubstitutes(data);
       scrollTo("outcome");
     } catch (err) {
       setCustomResult({ error: "request_failed", message: (err as Error).message });
@@ -1097,6 +1116,7 @@ function ProductExplorer() {
       });
       const data = await res.json();
       setCustomResult(data);
+      rememberNoSubstitutes(data);
       scrollTo("outcome");
     } catch (err) {
       setCustomResult({ error: "request_failed", message: (err as Error).message });
@@ -1163,6 +1183,7 @@ function ProductExplorer() {
               onSelect={() => selectProduct(r)}
               onFindSubstitutes={() => findSubstitutesFor(r)}
               substitutesLoading={substitutesLoadingId === r.envelope.claim.product_id}
+              knownNoSubstitutes={noSubstituteIds.has(r.envelope.claim.product_id)}
             />
           ))}
         </div>
