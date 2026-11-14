@@ -256,6 +256,71 @@ h1 {
   opacity: 0.7;
 }
 
+.scenario-panel {
+  margin-bottom: 24px;
+  cursor: default;
+}
+
+.scenario-panel:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.scenario-panel .run-btn {
+  align-self: flex-start;
+}
+
+/* ---- scenario tabs ---- */
+
+.scenario-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 6px;
+  margin-bottom: 20px;
+  scrollbar-width: thin;
+}
+
+@media (min-width: 721px) {
+  .scenario-tabs {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+}
+
+.scenario-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.scenario-tab-icon {
+  display: flex;
+  align-items: center;
+}
+
+.scenario-tab-active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.scenario-tab-good.scenario-tab-active { border-color: var(--green); background: rgba(53, 195, 123, 0.14); }
+.scenario-tab-warn.scenario-tab-active { border-color: var(--amber); background: rgba(240, 180, 41, 0.14); }
+.scenario-tab-bad.scenario-tab-active { border-color: var(--red); background: rgba(240, 86, 107, 0.14); }
+.scenario-tab-info.scenario-tab-active { border-color: var(--info); background: rgba(110, 168, 254, 0.14); }
+
 .scenario-card-good { background: #0f2219; border-color: #1f5c3b; }
 .scenario-card-warn { background: #241a0c; border-color: #5a481c; }
 .scenario-card-bad { background: #25121a; border-color: #5c2130; }
@@ -330,6 +395,25 @@ h1 {
   font-weight: 700;
   font-size: 13.5px;
   align-self: flex-start;
+}
+
+@media (max-width: 480px) {
+  .run-btn,
+  .cta-btn,
+  .explorer-search .run-btn,
+  .explorer-qty-row .run-btn {
+    width: 100%;
+    align-self: stretch;
+  }
+
+  .cta-row {
+    flex-direction: column;
+  }
+
+  .explorer-qty-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }
 
 .cta-btn {

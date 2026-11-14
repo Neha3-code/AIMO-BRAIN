@@ -10,6 +10,7 @@ const SCENARIO_CARDS = [
     id: "1",
     index: "01",
     badge: "AUTO",
+    tabLabel: "Auto",
     tone: "good" as const,
     icon: "cart" as const,
     title: "Autonomous purchasing",
@@ -20,6 +21,7 @@ const SCENARIO_CARDS = [
     id: "2",
     index: "02",
     badge: "APPROVAL",
+    tabLabel: "Approval",
     tone: "warn" as const,
     icon: "userCheck" as const,
     title: "Two-sided approval",
@@ -30,6 +32,7 @@ const SCENARIO_CARDS = [
     id: "3",
     index: "03",
     badge: "SAFETY",
+    tabLabel: "Substitution",
     tone: "bad" as const,
     icon: "shield" as const,
     title: "Stock-out & substitution",
@@ -40,6 +43,7 @@ const SCENARIO_CARDS = [
     id: "4",
     index: "04",
     badge: "FLEXIBILITY",
+    tabLabel: "Partial",
     tone: "info" as const,
     icon: "box" as const,
     title: "Partial availability",
@@ -50,6 +54,7 @@ const SCENARIO_CARDS = [
     id: "5",
     index: "05",
     badge: "RECIPE",
+    tabLabel: "Recipe",
     tone: "good" as const,
     icon: "flask" as const,
     title: "Recipe-chemistry substitution",
@@ -1045,6 +1050,7 @@ function ProductExplorer() {
 export default function Page() {
   const [results, setResults] = useState<Record<string, ScenarioResult | { error: string; message?: string } | undefined>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const [activeTab, setActiveTab] = useState(SCENARIO_CARDS[0].id);
 
   async function run(id: string) {
     setLoading((s) => ({ ...s, [id]: true }));
@@ -1121,9 +1127,25 @@ export default function Page() {
       <div className="section-title" id="scenarios">
         Choose a scenario
       </div>
-      <div className="scenario-grid">
+      <div className="scenario-tabs">
         {SCENARIO_CARDS.map((s) => (
-          <button className={`scenario-card scenario-card-${s.tone}`} key={s.id} onClick={() => run(s.id)} disabled={loading[s.id]}>
+          <button
+            key={s.id}
+            className={`scenario-tab scenario-tab-${s.tone} ${activeTab === s.id ? "scenario-tab-active" : ""}`}
+            onClick={() => setActiveTab(s.id)}
+          >
+            <span className="scenario-tab-icon">
+              <ScenarioIcon name={s.icon} />
+            </span>
+            {s.index} {s.tabLabel}
+          </button>
+        ))}
+      </div>
+
+      {SCENARIO_CARDS.filter((s) => s.id === activeTab).map((s) => {
+        const result = results[s.id];
+        return (
+          <div className={`scenario-panel scenario-card scenario-card-${s.tone}`} key={s.id}>
             <div className="scenario-card-top">
               <span className="scenario-icon">
                 <ScenarioIcon name={s.icon} />
@@ -1135,25 +1157,23 @@ export default function Page() {
             <h3>{s.title}</h3>
             <p>{s.description}</p>
             <span className="scenario-outcome">Outcome: {s.outcome}</span>
-            <span className="run-btn">{loading[s.id] ? "Running…" : "Explore scenario"}</span>
-          </button>
-        ))}
-      </div>
+            <button className="run-btn" onClick={() => run(s.id)} disabled={loading[s.id]}>
+              {loading[s.id] ? "Running…" : "Run scenario"}
+            </button>
 
-      {SCENARIO_CARDS.map((s) => {
-        const result = results[s.id];
-        if (!result) return null;
-        if ("error" in result) {
-          return (
-            <div className="workspace" key={s.id}>
-              <Pill status="blocked">Error</Pill>
-              <div className="timeline-detail" style={{ marginTop: 8 }}>
-                {(result as any).message ?? (result as any).error}
-              </div>
-            </div>
-          );
-        }
-        return <TransactionWorkspace result={result} key={s.id} />;
+            {result &&
+              ("error" in result ? (
+                <div className="workspace">
+                  <Pill status="blocked">Error</Pill>
+                  <div className="timeline-detail" style={{ marginTop: 8 }}>
+                    {(result as any).message ?? (result as any).error}
+                  </div>
+                </div>
+              ) : (
+                <TransactionWorkspace result={result} />
+              ))}
+          </div>
+        );
       })}
 
       <ProductExplorer />
