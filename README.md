@@ -9,7 +9,7 @@ challenge. Two independent sides talking over HTTP:
   off. **Live: https://aimo-api.onrender.com**
 - **`apps/buyer-demo`** — a reference buyer-agent + demo UI that calls
   `aimo-api` over HTTP and applies its own, separate guardrails.
-  **Live: https://buyer-demo.vercel.app**
+  **Live: https://aimobrain.vercel.app**
 - **`packages/shared`** — the TypeScript contract (trust envelope, quote,
   order, audit event) both sides import.
 - **Database**: **Neon** Postgres, used by `aimo-api` only, over Neon's HTTP
@@ -116,7 +116,7 @@ npm run demo
   directory `apps/buyer-demo`, deployed from the monorepo root so the
   `@aimo/shared` workspace package resolves). Env vars: `AIMO_API_BASE_URL`
   (the Render URL), `AIMO_API_KEY`, `BUYER_ID`. Live at
-  https://buyer-demo.vercel.app.
+  https://aimobrain.vercel.app.
 
 ## Verified end-to-end
 

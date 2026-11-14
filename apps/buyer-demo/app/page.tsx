@@ -654,7 +654,7 @@ export default function Page() {
       </div>
       <h1>AIMO BRAIN</h1>
       <div className="tagline">Trusted trade agents</div>
-      <p className="lede">Autonomous procurement, with independent controls on both sides.</p>
+      <p className="lede">Autonomous trade. Independent control. Built on trust.</p>
 
       <div className="flow">
         {FLOW_STEPS.map((f, i) => (
