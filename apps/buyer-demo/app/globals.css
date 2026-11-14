@@ -562,6 +562,20 @@ h3,
   margin: 0 0 22px;
 }
 
+.role-card .role-title-sm {
+  font-size: 32px;
+}
+
+.role-authority-note {
+  margin-top: 36px;
+  padding: 18px 22px;
+  background: var(--white);
+  border-left: 5px solid var(--petrol);
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
 .role-card .role-desc {
   font-size: 19px;
   line-height: 1.55;
@@ -909,6 +923,49 @@ h3,
   background: var(--info-dim);
   color: var(--info);
   border-color: var(--info-border);
+}
+
+.decision-timeline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0;
+  padding: 14px 16px;
+  background: var(--light-blue);
+  border-radius: 10px;
+}
+
+.decision-timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.decision-timeline-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--petrol);
+  color: var(--white);
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.decision-timeline-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+@media (max-width: 720px) {
+  .decision-timeline {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 
 /* ---- timeline ---- */
@@ -1930,6 +1987,67 @@ footer .note {
   white-space: nowrap;
 }
 
+/* ---- explorer sub-tabs: Find products / Plan an order ---- */
+
+.explorer-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+@media (max-width: 720px) {
+  .explorer-tabs {
+    grid-template-columns: 1fr;
+  }
+}
+
+.explorer-tab-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  background: var(--light-blue);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 16px 18px;
+  color: inherit;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.explorer-tab-card:hover {
+  background: var(--petrol-light);
+}
+
+.explorer-tab-card-active {
+  background: var(--white);
+  border-color: var(--petrol);
+}
+
+.explorer-tab-icon {
+  color: var(--petrol);
+  margin-bottom: 4px;
+}
+
+.explorer-tab-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.explorer-tab-title {
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.explorer-tab-desc {
+  font-size: 13px;
+  color: var(--muted);
+}
+
 /* ---- recommended products ---- */
 
 .recommended-grid {
@@ -2269,6 +2387,17 @@ footer .note {
   font-size: 12px;
   color: var(--muted);
   margin-top: 2px;
+}
+.recipe-no-match {
+  font-size: 13px;
+  font-style: italic;
+  color: var(--muted);
+}
+.recipe-exception {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--amber);
+  margin-top: 4px;
 }
 .ai-narration {
   margin: 16px 0;

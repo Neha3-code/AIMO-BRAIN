@@ -283,6 +283,46 @@ function Hero({ result }: { result: ScenarioResult }) {
   );
 }
 
+const OUTCOME_TONE_TO_PILL: Record<"good" | "warn" | "neutral", StepStatus> = { good: "passed", warn: "blocked", neutral: "info" };
+
+/** A 4-row, at-a-glance summary of the binding decision — availability, both independent
+ *  policies, and the final order outcome — so a judge can read the result in seconds before
+ *  going down into the full evidence below. */
+function DecisionTimeline({ result }: { result: ScenarioResult }) {
+  const line = result.relevantLines?.[0] ?? result.quote?.lines[0] ?? null;
+  const availability = line?.envelope.claim.availability;
+  const availabilityStatus: StepStatus = !availability ? "info" : availability.status === "out_of_stock" ? "blocked" : "passed";
+  const availabilityLabel = availability ? formatStockQuantity(availability.status, availability.quantity) : "not checked";
+
+  const outcomeMeta = OUTCOME_META[result.outcome];
+  const rows: { label: string; status: StepStatus; detail: string }[] = [
+    { label: "Product availability", status: availabilityStatus, detail: availabilityLabel },
+    {
+      label: "Buyer policy",
+      status: result.buyerPolicy?.status ?? "info",
+      detail: result.buyerPolicy ? result.buyerPolicy.status.replace(/_/g, " ") : "not evaluated"
+    },
+    {
+      label: "Supplier policy",
+      status: result.aimoPolicy?.status ?? "info",
+      detail: result.aimoPolicy ? result.aimoPolicy.status.replace(/_/g, " ") : "no opinion"
+    },
+    { label: "Order", status: OUTCOME_TONE_TO_PILL[outcomeMeta.tone], detail: outcomeMeta.label }
+  ];
+
+  return (
+    <div className="decision-timeline">
+      {rows.map((r, i) => (
+        <div className="decision-timeline-row" key={r.label}>
+          <span className="decision-timeline-num">{i + 1}</span>
+          <span className="decision-timeline-label">{r.label}</span>
+          <Pill status={r.status}>{r.detail}</Pill>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PolicyPanels({ result }: { result: ScenarioResult }) {
   if (!result.buyerPolicy && !result.aimoPolicy) return null;
   return (
@@ -1010,6 +1050,7 @@ function TransactionWorkspace({ result }: { result: ScenarioResult }) {
   return (
     <div className="workspace">
       <Hero result={result} />
+      <DecisionTimeline result={result} />
       <AiNarration result={result} />
       <ApprovalSequence result={result} />
       <PolicyPanels result={result} />
@@ -1136,7 +1177,7 @@ function SeasonalSuggestionsCard({ onPick }: { onPick: (r: ProductLookupResult) 
     <div className="ai-panel">
       <div className="ai-panel-head">
         <AiBadge />
-        <span className="ai-panel-title">In season now</span>
+        <span className="ai-panel-title">Seasonal inspiration from Aimo AI</span>
       </div>
       {!data && !error && (
         <p className="mock-note">
@@ -1164,8 +1205,9 @@ function SeasonalSuggestionsCard({ onPick }: { onPick: (r: ProductLookupResult) 
             ))}
           </div>
           <p className="mock-note" style={{ marginTop: 10 }}>
-            Suggest-only: Aimo AI proposes, nothing is quoted or ordered until you pick a product and it passes the same buyer and supplier
-            policy checks as any other order. Prices and stock are live from aimo-api.
+            AI-generated seasonal reasoning, not observed sales or demand data. Suggest-only: Aimo AI proposes, nothing is quoted or
+            ordered until you pick a product and it passes the same buyer and supplier policy checks as any other order. Prices and
+            stock are live from aimo-api.
           </p>
         </>
       )}
@@ -1175,7 +1217,13 @@ function SeasonalSuggestionsCard({ onPick }: { onPick: (r: ProductLookupResult) 
 
 /** need → recipe → order lines. The LLM plans ingredients and picks real SKUs; each line is then
  *  evaluated through the unchanged quote → policy pipeline. */
-function RecipePlanner({ onPickLine }: { onPickLine: (r: ProductLookupResult, units: number) => void }) {
+function RecipePlanner({
+  onPickLine,
+  onFindSubstitute
+}: {
+  onPickLine: (r: ProductLookupResult, units: number) => void;
+  onFindSubstitute: (r: ProductLookupResult) => void;
+}) {
   const [dish, setDish] = useState("");
   const [covers, setCovers] = useState(40);
   const [loading, setLoading] = useState(false);
@@ -1279,28 +1327,42 @@ function RecipePlanner({ onPickLine }: { onPickLine: (r: ProductLookupResult, un
                       <div className="recipe-sub">need {l.quantity_needed}</div>
                     </td>
                     <td>
-                      {l.product ? (
+                      {l.match_confidence === "none" ? (
+                        <div className="recipe-no-match">
+                          {l.ingredient} — no sufficiently confident catalogue match. Search or pick a product manually.
+                        </div>
+                      ) : l.product ? (
                         <>
                           <div>{l.product.name}</div>
                           <div className="recipe-sub">
                             {l.product.envelope.claim.price ? `${formatEur(l.product.envelope.claim.price.amount)} / unit` : "price unavailable"}{" "}
                             <StockTag r={l.product} />
                           </div>
+                          {l.needs_substitute && (
+                            <div className="recipe-exception">⚠ Out of stock — find a substitute before ordering this line.</div>
+                          )}
                         </>
                       ) : (
                         <span className="recipe-sub">—</span>
                       )}
-                      <div className="recipe-sub">
-                        {l.units_basis === "catalog_weight" ? "📏 " : "≈ "}
-                        {l.note}
-                      </div>
+                      {l.match_confidence !== "none" && (
+                        <div className="recipe-sub">
+                          {l.units_basis === "catalog_weight" ? "📏 " : "≈ "}
+                          {l.note}
+                        </div>
+                      )}
                     </td>
                     <td>{l.product ? l.order_units : "—"}</td>
                     <td>{l.product?.envelope.claim.price ? formatEur(l.product.envelope.claim.price.amount * l.order_units) : "—"}</td>
                     <td>
-                      {l.product && (
+                      {l.product && !l.needs_substitute && (
                         <button type="button" className="run-btn run-btn-sm" onClick={() => onPickLine(l.product!, l.order_units)}>
                           Evaluate line
+                        </button>
+                      )}
+                      {l.product && l.needs_substitute && (
+                        <button type="button" className="run-btn run-btn-sm run-btn-secondary" onClick={() => onFindSubstitute(l.product!)}>
+                          Find substitute
                         </button>
                       )}
                     </td>
@@ -1321,6 +1383,7 @@ function RecipePlanner({ onPickLine }: { onPickLine: (r: ProductLookupResult, un
 }
 
 function ProductExplorer() {
+  const [explorerTab, setExplorerTab] = useState<"search" | "plan">("search");
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<(ProductLookupResult & { ai_reason?: string })[] | null>(null);
@@ -1465,79 +1528,117 @@ function ProductExplorer() {
         decisions: the exact same quote → buyer policy → order pipeline as the scenarios above, nothing special-cased.
       </p>
 
-      <SeasonalSuggestionsCard onPick={(r) => selectProduct(r)} />
-
-      <div className="section-title" style={{ margin: "0 0 10px" }}>
-        Recommended products to try
+      <div className="explorer-tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={explorerTab === "search"}
+          className={`explorer-tab-card ${explorerTab === "search" ? "explorer-tab-card-active" : ""}`}
+          onClick={() => setExplorerTab("search")}
+        >
+          <span className="explorer-tab-icon">
+            <SearchIcon />
+          </span>
+          <span className="explorer-tab-title">Find products</span>
+          <span className="explorer-tab-desc">Search, discover and find compliant substitutes.</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={explorerTab === "plan"}
+          className={`explorer-tab-card ${explorerTab === "plan" ? "explorer-tab-card-active" : ""}`}
+          onClick={() => setExplorerTab("plan")}
+        >
+          <span className="explorer-tab-icon">
+            <ChefHatIcon />
+          </span>
+          <span className="explorer-tab-title">Plan an order</span>
+          <span className="explorer-tab-desc">Describe a dish, specify covers and generate a proposed basket.</span>
+        </button>
       </div>
       <p className="explorer-lede" style={{ marginBottom: 12 }}>
-        A free-text search over 17,546 real SKUs will surface real noise — that's honest, not a bug, but it's the wrong
-        starting point for a live demo. These four are curated to show a real selected / manual-review / rejected mix.
+        Keep the purchase evaluation and its decision evidence underneath the selected product or planned basket.
       </p>
-      <div className="recommended-grid">
-        {RECOMMENDED_PRODUCTS.map((item) => (
-          <button key={item.id} type="button" className="recommended-card" onClick={() => selectRecommended(item)}>
-            <div className="recommended-card-name">{item.label}</div>
-            <div className="recommended-card-note">{item.note}</div>
-          </button>
-        ))}
-      </div>
 
-      <div className="section-title" style={{ margin: "24px 0 10px" }}>
-        Or search the full catalogue yourself
-      </div>
-      <div className="explorer-chips">
-        {EXAMPLE_SEARCHES.map((ex) => (
-          <button key={ex.label} type="button" className="explorer-chip" onClick={() => search(undefined, ex.query, false)}>
-            {ex.label}
-          </button>
-        ))}
-      </div>
-      <div className="explorer-chips">
-        {AI_EXAMPLE_SEARCHES.map((q) => (
-          <button key={q} type="button" className="explorer-chip explorer-chip-ai" onClick={() => { setAiMode(true); search(undefined, q, true); }}>
-            ✦ {q}
-          </button>
-        ))}
-      </div>
-      <form className="explorer-search" onSubmit={search}>
-        <input className="explorer-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={aiMode ? "Describe what you need, e.g. something creamy and lactose-free for a dessert" : "e.g. cheese, salmon, yoghurt…"} />
-        <button className="run-btn" type="submit" disabled={searching}>
-          {searching ? (aiMode ? "Thinking…" : "Searching…") : "Search catalog"}
-        </button>
-      </form>
-      <label className="ai-toggle">
-        <input type="checkbox" checked={aiMode} onChange={(e) => setAiMode(e.target.checked)} /> AI search — understands needs, not just
-        product names (NVIDIA Nemotron via Verda). Off = literal name match.
-      </label>
+      {explorerTab === "search" && (
+        <>
+          <SeasonalSuggestionsCard onPick={(r) => selectProduct(r)} />
 
-      {searchError && <p className="mock-note explorer-error">{searchError}</p>}
+          <div className="section-title" style={{ margin: "0 0 10px" }}>
+            Recommended products to try
+          </div>
+          <p className="explorer-lede" style={{ marginBottom: 12 }}>
+            A free-text search over 17,546 real SKUs will surface real noise — that's honest, not a bug, but it's the wrong
+            starting point for a live demo. These four are curated to show a real selected / manual-review / rejected mix.
+          </p>
+          <div className="recommended-grid">
+            {RECOMMENDED_PRODUCTS.map((item) => (
+              <button key={item.id} type="button" className="recommended-card" onClick={() => selectRecommended(item)}>
+                <div className="recommended-card-name">{item.label}</div>
+                <div className="recommended-card-note">{item.note}</div>
+              </button>
+            ))}
+          </div>
 
-      {searchResults && (
-        <div className="explorer-results scroll-anchor" ref={resultsRef}>
-          {searchMeta?.mode === "ai" && searchMeta.interpretation && (
-            <p className="ai-interpretation">
-              <AiBadge /> {searchMeta.interpretation}
-            </p>
+          <div className="section-title" style={{ margin: "24px 0 10px" }}>
+            Or search the full catalogue yourself
+          </div>
+          <div className="explorer-chips">
+            {EXAMPLE_SEARCHES.map((ex) => (
+              <button key={ex.label} type="button" className="explorer-chip" onClick={() => search(undefined, ex.query, false)}>
+                {ex.label}
+              </button>
+            ))}
+          </div>
+          <div className="explorer-chips">
+            {AI_EXAMPLE_SEARCHES.map((q) => (
+              <button key={q} type="button" className="explorer-chip explorer-chip-ai" onClick={() => { setAiMode(true); search(undefined, q, true); }}>
+                ✦ {q}
+              </button>
+            ))}
+          </div>
+          <form className="explorer-search" onSubmit={search}>
+            <input className="explorer-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={aiMode ? "Describe what you need, e.g. something creamy and lactose-free for a dessert" : "e.g. cheese, salmon, yoghurt…"} />
+            <button className="run-btn" type="submit" disabled={searching}>
+              {searching ? (aiMode ? "Thinking…" : "Searching…") : "Search catalog"}
+            </button>
+          </form>
+          <label className="ai-toggle">
+            <input type="checkbox" checked={aiMode} onChange={(e) => setAiMode(e.target.checked)} /> AI search — understands needs, not just
+            product names (NVIDIA Nemotron via Verda). Off = literal name match.
+          </label>
+
+          {searchError && <p className="mock-note explorer-error">{searchError}</p>}
+
+          {searchResults && (
+            <div className="explorer-results scroll-anchor" ref={resultsRef}>
+              {searchMeta?.mode === "ai" && searchMeta.interpretation && (
+                <p className="ai-interpretation">
+                  <AiBadge /> {searchMeta.interpretation}
+                </p>
+              )}
+              {searchMeta?.ai_error && <p className="mock-note">AI search unavailable ({searchMeta.ai_error}) — showing literal name matches instead.</p>}
+              {searchResults.length === 0 && <p className="mock-note">No matches in the catalog for that search.</p>}
+              {searchResults.map((r) => (
+                <ProductCard
+                  r={r}
+                  key={r.envelope.claim.product_id}
+                  isSelected={selected?.envelope.claim.product_id === r.envelope.claim.product_id}
+                  onSelect={() => selectProduct(r)}
+                  onFindSubstitutes={() => findSubstitutesFor(r)}
+                  substitutesLoading={substitutesLoadingId === r.envelope.claim.product_id}
+                  knownNoSubstitutes={noSubstituteIds.has(r.envelope.claim.product_id)}
+                  aiReason={r.ai_reason}
+                />
+              ))}
+            </div>
           )}
-          {searchMeta?.ai_error && <p className="mock-note">AI search unavailable ({searchMeta.ai_error}) — showing literal name matches instead.</p>}
-          {searchResults.length === 0 && <p className="mock-note">No matches in the catalog for that search.</p>}
-          {searchResults.map((r) => (
-            <ProductCard
-              r={r}
-              key={r.envelope.claim.product_id}
-              isSelected={selected?.envelope.claim.product_id === r.envelope.claim.product_id}
-              onSelect={() => selectProduct(r)}
-              onFindSubstitutes={() => findSubstitutesFor(r)}
-              substitutesLoading={substitutesLoadingId === r.envelope.claim.product_id}
-              knownNoSubstitutes={noSubstituteIds.has(r.envelope.claim.product_id)}
-              aiReason={r.ai_reason}
-            />
-          ))}
-        </div>
+        </>
       )}
 
-      <RecipePlanner onPickLine={(r, units) => selectProduct(r, units)} />
+      {explorerTab === "plan" && (
+        <RecipePlanner onPickLine={(r, units) => selectProduct(r, units)} onFindSubstitute={(r) => findSubstitutesFor(r)} />
+      )}
 
       {selected && (
         <div className="detail-card scroll-anchor" ref={selectedRef}>
@@ -1709,7 +1810,7 @@ export default function Page() {
           <h2 className="section-heading">Three parties, one transaction</h2>
           <div className="role-grid">
             <div className="role-card">
-              <h3 className="role-title">Buyer AI</h3>
+              <h3 className="role-title role-title-sm">AIMO BRAIN buyer agent</h3>
               <p className="role-desc">
                 Applies the kitchen&apos;s own rules — budget, allergens, delivery dates, recipe chemistry and carbon limits. Aimo never
                 sees or overrides them.
@@ -1717,7 +1818,7 @@ export default function Page() {
               <span className="role-tag">Buyer-controlled</span>
             </div>
             <div className="role-card">
-              <h3 className="role-title">Aimo AI</h3>
+              <h3 className="role-title role-title-sm">Aimo supplier agent</h3>
               <p className="role-desc">
                 Applies supplier rules — credit limits and human approvals — and discloses carbon footprint and delivery reliability on
                 every quote line.
@@ -1732,6 +1833,12 @@ export default function Page() {
               <span className="role-tag">Independent evidence</span>
             </div>
           </div>
+          <p className="role-authority-note">
+            <strong>AI proposes. Independent policy engines decide. Every decision is auditable.</strong> The Aimo AI · Nemotron
+            assistant (search, seasonal ideas, recipe planning) only proposes real catalog products — it never approves, rejects or
+            places an order. Every product it suggests still runs through the same buyer-policy and supplier-policy checks as a
+            manually picked one, unchanged.
+          </p>
         </div>
       </section>
 

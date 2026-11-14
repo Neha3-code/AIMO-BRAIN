@@ -190,7 +190,9 @@ export async function seasonalSuggestions(date = new Date()): Promise<SeasonalSu
       {
         role: "system",
         content: `You are Aimo AI, the proactive selling assistant of a Finnish foodservice wholesaler. The customer is a hotel restaurant kitchen in Espoo, Finland.
-Given today's date, propose 3 timely menu themes driven by Finnish seasonality: produce and fish in season, game season, and upcoming holidays/events within the next ~6 weeks. Only use what the guide lists for this or next month.
+Given today's exact date, propose 3 timely menu themes driven by Finnish seasonality: produce and fish in season, game season, and upcoming holidays/events within the next ~6 weeks. Only use what the guide lists for this or next month.
+A named day-specific event (e.g. a holiday on a specific date) that already fell earlier THIS month, before today's date, is in the past — never present it as upcoming. You may still reference the season or occasion it belongs to (e.g. "Pikkujoulu party season continues") if that's still current, but don't claim the specific past date is still ahead.
+These are seasonality-driven suggestions you are reasoning about, not observed sales or demand data — don't claim products are "trending" or imply you have sales evidence.
 ${FINNISH_SEASONS}
 ${KEYWORD_RULES}
 Return JSON: {"season": "<one sentence on what is seasonal right now>", "themes": [{"title": "<3-6 words>", "why": "<one sentence>", "queries": ["...", "..."]}]} with 3-5 queries per theme.`
@@ -260,6 +262,13 @@ export interface RecipeLine {
   note: string;
   product: ProductLookupResult | null;
   alternatives_considered: number;
+  /** "good" = the model is confident this SKU is the ingredient, not just a keyword hit (e.g. rejects
+   *  BUTTER SPREADER for "butter"). "none" means no candidate was confident enough — product is null
+   *  and the buyer must pick or search manually, instead of a weak guess looking like a recommendation. */
+  match_confidence: "good" | "none";
+  /** The chosen product is out of stock and no in-stock alternative was available — a planning
+   *  exception the buyer must resolve (e.g. find a substitute) before this line can be ordered. */
+  needs_substitute: boolean;
 }
 
 export interface RecipePlan {
@@ -304,14 +313,17 @@ Return JSON: {"summary": "<one sentence describing the dish as you interpreted i
     candidates: pool([ing.ingredient, ...(ing.queries ?? [])], 6, 14)
   }));
 
-  const chosen = await chatJSON<{ lines: { index: number; ranked: { id: string; order_units: number; note: string }[] }[] }>([
+  const chosen = await chatJSON<{
+    lines: { index: number; ranked: { id: string; order_units: number; note: string; confidence: "good" | "weak" }[] }[];
+  }>([
     {
       role: "system",
       content: `For each ingredient rank the best 3 wholesale products FROM THAT INGREDIENT'S CANDIDATES ONLY (prefer plain, unprocessed, foodservice pack sizes; best first). Leave ranked empty if nothing fits.
 Match the ingredient as a chef means it: "cream" is dairy cream (not coconut or ice cream), "butter" is a block (not 10 g portions) — unless the dish explicitly asks otherwise.
+A candidate only matched by a shared keyword but is really a different kind of product (e.g. "BUTTER SPREADER" or "BUTTER KNIFE" for ingredient "butter", a seasoning mix for a raw ingredient) is NOT the ingredient — mark it confidence "weak" rather than dropping it silently, so the buyer sees it was considered and rejected. Only mark "good" when you're confident the product IS the ingredient.
 For each, compute order_units = how many sales units of that product cover quantity_needed, reading the pack size from the product name (round up; if the pack size is unclear, give your best estimate and say so in note).
 note: max 15 words — pack size reasoning or why nothing fit.
-Return JSON: {"lines": [{"index": <ingredient index>, "ranked": [{"id": "<id>", "order_units": <integer>, "note": "..."}]}]}`
+Return JSON: {"lines": [{"index": <ingredient index>, "ranked": [{"id": "<id>", "order_units": <integer>, "note": "...", "confidence": "good|weak"}]}]}`
     },
     {
       role: "user",
@@ -336,12 +348,16 @@ Return JSON: {"lines": [{"index": <ingredient index>, "ranked": [{"id": "<id>", 
     summary: recipe.summary ?? "",
     lines: ingredients.map((ing, i) => {
       const ranked = rankedPerIngredient[i];
-      const bestId = preferAvailable(ranked.map((r) => String(r.id)), live, 1)[0];
-      const best = ranked.find((r) => String(r.id) === bestId);
-      const product = bestId ? (live.get(bestId) ?? null) : null;
+      // Only a "good"-confidence pick counts as the ingredient; a "weak" match (keyword hit but
+      // wrong product) must never present as a confident recommendation.
+      const goodRanked = ranked.filter((r) => r.confidence !== "weak");
+      const bestId = preferAvailable(goodRanked.map((r) => String(r.id)), live, 1)[0] ?? goodRanked[0]?.id;
+      const best = goodRanked.find((r) => String(r.id) === bestId);
+      const product = bestId ? (live.get(String(bestId)) ?? null) : null;
       const needKg = parseKg(ing.quantity_needed);
       const unitKg = product?.net_weight_kg_per_sales_unit ?? null;
       const computed = needKg !== null && unitKg ? Math.ceil(needKg / unitKg - 1e-9) : null;
+      const needsSubstitute = product?.envelope.claim.availability.status === "out_of_stock";
       return {
         ingredient: ing.ingredient,
         role: ing.role === "core" ? "core" : "supporting",
@@ -354,10 +370,12 @@ Return JSON: {"lines": [{"index": <ingredient index>, "ranked": [{"id": "<id>", 
             : best
               ? (best.note ?? "")
               : ranked.length
-                ? "Proposed products could not be priced live right now."
+                ? `No sufficiently confident catalogue match for "${ing.ingredient}" — only keyword-similar products were found.`
                 : "No matching product in the catalog.",
         product,
-        alternatives_considered: ing.candidates.length
+        alternatives_considered: ing.candidates.length,
+        match_confidence: product ? "good" : "none",
+        needs_substitute: needsSubstitute
       };
     })
   };
