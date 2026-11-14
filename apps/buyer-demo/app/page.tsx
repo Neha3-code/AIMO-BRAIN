@@ -8,32 +8,123 @@ const SCENARIO_CARDS = [
   {
     id: "1",
     index: "01",
+    badge: "AUTO",
+    tone: "good" as const,
+    icon: "cart" as const,
     title: "Autonomous purchasing",
-    tagline: "Happy path",
-    description: "The buyer agent finds a suitable product, obtains a quote and places an order within its permissions."
+    description: "Find, quote, approve and order automatically.",
+    outcome: "Order confirmed"
   },
   {
     id: "2",
     index: "02",
+    badge: "APPROVAL",
+    tone: "warn" as const,
+    icon: "userCheck" as const,
     title: "Two-sided approval",
-    tagline: "Human approval",
-    description: "The buyer policy permits the order, but Aimo requires its own human approval before release."
+    description: "Supplier approval required for a large order.",
+    outcome: "Human approved"
   },
   {
     id: "3",
     index: "03",
-    title: "Stock-out and substitution",
-    tagline: "Alternative selection",
-    description: "The requested product is unavailable. Aimo returns ranked alternatives and the buyer agent checks its own constraints."
+    badge: "SAFETY",
+    tone: "bad" as const,
+    icon: "shield" as const,
+    title: "Stock-out & substitution",
+    description: "Reject alternatives that violate buyer rules.",
+    outcome: "Unsafe option rejected"
   },
   {
     id: "4",
     index: "04",
+    badge: "FLEXIBILITY",
+    tone: "info" as const,
+    icon: "box" as const,
     title: "Partial availability",
-    tagline: "Mixed basket",
-    description: "One basket, two products — one ready to order, one out of stock. Each line is resolved on its own, not as one pass/fail outcome."
+    description: "Handle available and unavailable lines separately.",
+    outcome: "1 of 2 lines eligible"
   }
 ];
+
+const EXAMPLE_SEARCHES: { label: string; query: string }[] = [
+  { label: "Search for lactose-free milk", query: "milk" },
+  { label: "Find salmon", query: "salmon" },
+  { label: "Search for yoghurt", query: "yoghurt" },
+  { label: "Find wheat bread", query: "wheat bread" }
+];
+
+function ScenarioIcon({ name }: { name: "cart" | "userCheck" | "shield" | "box" }) {
+  const common = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  switch (name) {
+    case "cart":
+      return (
+        <svg {...common}>
+          <circle cx="9" cy="20" r="1" />
+          <circle cx="18" cy="20" r="1" />
+          <path d="M3 4h2l2.4 12.2a2 2 0 0 0 2 1.8h8.2a2 2 0 0 0 2-1.6L21 8H6" />
+        </svg>
+      );
+    case "userCheck":
+      return (
+        <svg {...common}>
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+          <circle cx="9" cy="7" r="4" />
+          <path d="M17 11l2 2 4-4" />
+        </svg>
+      );
+    case "shield":
+      return (
+        <svg {...common}>
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+      );
+    case "box":
+      return (
+        <svg {...common}>
+          <path d="M21 8l-9-5-9 5 9 5 9-5Z" />
+          <path d="M3 8v8l9 5 9-5V8" />
+          <path d="M12 13v8" />
+        </svg>
+      );
+  }
+}
+
+function RoleIcon({ name }: { name: "buyer" | "aimo" | "audit" }) {
+  const common = { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  if (name === "buyer")
+    return (
+      <svg {...common}>
+        <circle cx="9" cy="20" r="1" />
+        <circle cx="18" cy="20" r="1" />
+        <path d="M3 4h2l2.4 12.2a2 2 0 0 0 2 1.8h8.2a2 2 0 0 0 2-1.6L21 8H6" />
+      </svg>
+    );
+  if (name === "aimo")
+    return (
+      <svg {...common}>
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
+        <path d="m9 12 2 2 4-4" />
+      </svg>
+    );
+  return (
+    <svg {...common}>
+      <rect x="4" y="3" width="16" height="18" rx="2" />
+      <path d="M9 7h6M9 11h6M9 15h4" />
+    </svg>
+  );
+}
+
+function BrainIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 2a3 3 0 0 0-3 3v1a3 3 0 0 0-2 5 3 3 0 0 0 2 5v1a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+      <path d="M15 2a3 3 0 0 1 3 3v1a3 3 0 0 1 2 5 3 3 0 0 1-2 5v1a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3Z" />
+    </svg>
+  );
+}
 
 const STAGE_LABEL: Record<string, string> = {
   request: "Buyer request",
@@ -45,13 +136,6 @@ const STAGE_LABEL: Record<string, string> = {
   audit: "Audit",
   result: "Outcome"
 };
-
-const FLOW_STEPS = [
-  { title: "Buyer agent", sub: "Buyer-owned policy" },
-  { title: "Aimo API", sub: "Supplier-owned policy" },
-  { title: "Order decision", sub: "Auto-approve, hold or reject" },
-  { title: "Audit trail", sub: "Decision evidence and provenance" }
-];
 
 const OUTCOME_META: Record<Outcome, { label: string; tone: "good" | "warn" | "neutral" }> = {
   confirmed_auto: { label: "Order confirmed", tone: "good" },
@@ -517,8 +601,10 @@ function ProductExplorer() {
   const [customResult, setCustomResult] = useState<ScenarioResult | { error: string; message?: string } | null>(null);
   const [running, setRunning] = useState(false);
 
-  async function search(e: React.FormEvent) {
-    e.preventDefault();
+  async function search(e?: React.FormEvent, overrideQuery?: string) {
+    e?.preventDefault();
+    const q = overrideQuery ?? query;
+    if (overrideQuery !== undefined) setQuery(overrideQuery);
     setSearching(true);
     setSearchError(null);
     setSelected(null);
@@ -527,7 +613,7 @@ function ProductExplorer() {
       const res = await fetch("/api/search-products", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query })
+        body: JSON.stringify({ query: q })
       });
       const data = await res.json();
       if (data.error) {
@@ -559,12 +645,19 @@ function ProductExplorer() {
   }
 
   return (
-    <div className="workspace">
-      <h2 style={{ marginTop: 0 }}>Try it yourself</h2>
+    <div className="workspace explorer-workspace" id="explorer">
+      <h2 style={{ marginTop: 0 }}>Test AIMO BRAIN with any product</h2>
       <p className="explorer-lede">
-        Search the real 17,546-product catalog behind this demo and run any product through the exact same live quote
-        → buyer policy → order pipeline as the four scenarios above — nothing here is special-cased.
+        Search the live Junction26 product catalogue — 17,546 real SKUs — and watch the AI purchasing workflow make its
+        decisions: the exact same quote → buyer policy → order pipeline as the four scenarios above, nothing special-cased.
       </p>
+      <div className="explorer-chips">
+        {EXAMPLE_SEARCHES.map((ex) => (
+          <button key={ex.label} type="button" className="explorer-chip" onClick={() => search(undefined, ex.query)}>
+            {ex.label}
+          </button>
+        ))}
+      </div>
       <form className="explorer-search" onSubmit={search}>
         <input className="explorer-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="e.g. cheese, salmon, yoghurt…" />
         <button className="run-btn" type="submit" disabled={searching}>
@@ -649,55 +742,78 @@ export default function Page() {
 
   return (
     <div className="wrap">
-      <div className="eyebrow">
-        <span className="badge-sandbox">CHALLENGE SANDBOX</span>
-      </div>
-      <h1>AIMO BRAIN</h1>
-      <div className="tagline">Trusted trade agents</div>
-      <p className="lede">Autonomous trade. Independent control. Built on trust.</p>
-
-      <div className="flow">
-        {FLOW_STEPS.map((f, i) => (
-          <span className="flow-item" key={f.title}>
-            <span className="flow-step">
-              <span className="flow-step-title">{f.title}</span>
-              <span className="flow-step-sub">{f.sub}</span>
-            </span>
-            {i < FLOW_STEPS.length - 1 && <span className="flow-arrow">→</span>}
+      <div className="brand-row">
+        <div className="brand-left">
+          <span className="brand-icon">
+            <BrainIcon />
           </span>
-        ))}
+          <span className="brand-word">AIMO BRAIN</span>
+        </div>
+        <span className="badge-sandbox">Junction26 · 2026</span>
       </div>
 
-      <p className="problem">
-        <strong>The problem:</strong> how can an autonomous buyer agent purchase from a supplier safely, without either side controlling
-        the other's policies? Price and stock below are live from Valio Aimo's real Junction26 challenge backend. Live retrieval and
-        cryptographic verification are different things: every claim carries a <code>mock_verified</code> trust envelope (explained once,
-        under "technical evidence" in each scenario below) — never presented as a production-grade verification standard.
-      </p>
+      <h1>Procurement that thinks. Trade that you can trust.</h1>
+      <p className="lede">Autonomous AI purchasing with independent buyer and supplier controls.</p>
+
+      <div className="cta-row">
+        <a className="cta-btn cta-btn-primary" href="#scenarios">
+          Explore demo
+        </a>
+        <a className="cta-btn cta-btn-secondary" href="#explorer">
+          Try it yourself
+        </a>
+      </div>
 
       <div className="role-grid">
         <div className="role-card">
-          <div className="role-title">Buyer agent</div>
-          <div className="role-desc">Purchasing on behalf of the buyer, applying its own allergen and budget policy after every response.</div>
+          <span className="role-icon role-icon-buyer">
+            <RoleIcon name="buyer" />
+          </span>
+          <div className="role-title">Buyer AI</div>
+          <div className="role-desc">Buyer rules — budget, allergens and delivery constraints.</div>
+          <span className="role-tag">Buyer-controlled</span>
         </div>
         <div className="role-card">
-          <div className="role-title">Aimo interface</div>
-          <div className="role-desc">Supplier rules and controls — credit limits and auto-approval ceilings, independent of the buyer's policy.</div>
+          <span className="role-icon role-icon-aimo">
+            <RoleIcon name="aimo" />
+          </span>
+          <div className="role-title">Aimo AI</div>
+          <div className="role-desc">Supplier rules — credit limits and commercial approvals.</div>
+          <span className="role-tag">Supplier-controlled</span>
         </div>
         <div className="role-card">
-          <div className="role-title">Audit trail</div>
-          <div className="role-desc">Evidence of every action: who decided what, why, and under which policy version.</div>
+          <span className="role-icon role-icon-audit">
+            <RoleIcon name="audit" />
+          </span>
+          <div className="role-title">Audit</div>
+          <div className="role-desc">Every decision — who decided what, why, and when.</div>
+          <span className="role-tag">Independent evidence</span>
         </div>
       </div>
 
-      <div className="section-title">Choose a scenario</div>
+      <p className="problem">
+        <strong>The problem:</strong> how can an autonomous buyer agent trade with a supplier safely, without either side
+        controlling the other's policies? Price and stock below are live from Valio Aimo's real Junction26 challenge
+        sandbox — every claim is clearly labeled <code>mock_verified</code>, never presented as a production feed.
+      </p>
+
+      <div className="section-title" id="scenarios">
+        Choose a scenario
+      </div>
       <div className="scenario-grid">
         {SCENARIO_CARDS.map((s) => (
-          <button className="scenario-card" key={s.id} onClick={() => run(s.id)} disabled={loading[s.id]}>
-            <span className="scenario-index">{s.index}</span>
+          <button className={`scenario-card scenario-card-${s.tone}`} key={s.id} onClick={() => run(s.id)} disabled={loading[s.id]}>
+            <div className="scenario-card-top">
+              <span className="scenario-icon">
+                <ScenarioIcon name={s.icon} />
+              </span>
+              <span className="scenario-index">
+                {s.index} · {s.badge}
+              </span>
+            </div>
             <h3>{s.title}</h3>
-            <span className="scenario-tagline">{s.tagline}</span>
             <p>{s.description}</p>
+            <span className="scenario-outcome">Outcome: {s.outcome}</span>
             <span className="run-btn">{loading[s.id] ? "Running…" : "Explore scenario"}</span>
           </button>
         ))}
@@ -719,7 +835,6 @@ export default function Page() {
         return <TransactionWorkspace result={result} key={s.id} />;
       })}
 
-      <div className="section-title">Beyond the scripted scenarios</div>
       <ProductExplorer />
 
       <footer className="note">

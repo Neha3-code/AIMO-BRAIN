@@ -1,12 +1,14 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
 :root {
-  --bg: #0b0f14;
-  --panel: #12171f;
-  --panel-2: #0f141b;
-  --border: #232b36;
-  --text: #e8edf2;
-  --muted: #8d99a8;
-  --accent: #4fd1c5;
-  --accent-dim: #2a5a55;
+  --bg: #0b1016;
+  --panel: #151d27;
+  --panel-2: #121921;
+  --border: #273342;
+  --text: #f2f5f8;
+  --muted: #90a0b2;
+  --accent: #35d2c0;
+  --accent-dim: #1d4440;
   --green: #35c37b;
   --green-dim: #173a28;
   --amber: #f0b429;
@@ -25,124 +27,99 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
 }
 
 .wrap {
-  max-width: 1080px;
+  max-width: 1120px;
   margin: 0 auto;
-  padding: 32px 20px 80px;
+  padding: 40px 20px 90px;
 }
 
 /* ---- header ---- */
 
-.eyebrow {
+.brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+
+.brand-left {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 10px;
 }
 
-.brand {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+.brand-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--accent-dim);
   color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.brand-word {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--text);
 }
 
 .badge-sandbox {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  padding: 3px 8px;
+  letter-spacing: 0.04em;
+  padding: 5px 12px;
   border-radius: 999px;
-  background: var(--amber-dim);
-  color: var(--amber);
-  border: 1px solid #5a481c;
+  background: var(--green-dim);
+  color: var(--green);
+  border: 1px solid #1f5c3b;
 }
 
 h1 {
-  font-size: 30px;
-  margin: 0 0 2px;
-  letter-spacing: -0.01em;
+  font-size: 36px;
+  margin: 0 0 10px;
+  letter-spacing: -0.02em;
   font-weight: 800;
+  line-height: 1.15;
+  max-width: 760px;
 }
 
 .tagline {
-  font-size: 14px;
-  color: var(--accent);
-  font-weight: 600;
-  margin-bottom: 8px;
+  display: none;
 }
 
 .lede {
   color: var(--muted);
-  font-size: 15px;
+  font-size: 16px;
   max-width: 680px;
-  margin: 0 0 20px;
-  line-height: 1.5;
+  margin: 0 0 28px;
+  line-height: 1.55;
 }
 
 .problem {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   background: none;
   border: none;
   border-left: 2px solid var(--border);
   border-radius: 0;
-  padding: 2px 0 2px 12px;
-  margin: 8px 0 28px;
+  padding: 2px 0 2px 14px;
+  margin: 28px 0;
   max-width: 760px;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 .problem strong {
   color: var(--text);
-}
-
-/* ---- system flow ---- */
-
-.flow {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 18px;
-}
-
-.flow-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.flow-step {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12px;
-  color: var(--text);
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 10px;
-  white-space: nowrap;
-}
-
-.flow-step-title {
-  font-weight: 700;
-}
-
-.flow-step-sub {
-  font-size: 10px;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.flow-arrow {
-  color: var(--muted);
-  font-size: 13px;
 }
 
 /* ---- role cards ---- */
@@ -163,47 +140,97 @@ h1 {
 .role-card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 14px;
+  border-radius: 12px;
+  padding: 18px;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.role-card:hover {
+  border-color: var(--accent-dim);
+  transform: translateY(-1px);
+}
+
+.role-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+.role-icon-buyer {
+  background: rgba(110, 168, 254, 0.14);
+  color: var(--info);
+}
+
+.role-icon-aimo {
+  background: rgba(53, 210, 192, 0.14);
+  color: var(--accent);
+}
+
+.role-icon-audit {
+  background: rgba(240, 180, 41, 0.14);
+  color: var(--amber);
 }
 
 .role-card .role-title {
-  font-weight: 600;
-  font-size: 13px;
+  font-weight: 700;
+  font-size: 16px;
   margin-bottom: 4px;
 }
 
 .role-card .role-desc {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
-  line-height: 1.4;
+  line-height: 1.5;
+}
+
+.role-card .role-tag {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 9px;
 }
 
 /* ---- section heading ---- */
 
 .section-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
-  margin: 0 0 12px;
+  margin: 36px 0 14px;
 }
 
 /* ---- scenario cards ---- */
 
 .scenario-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
   margin-bottom: 36px;
 }
 
+@media (max-width: 720px) {
+  .scenario-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .scenario-card {
-  background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 18px;
+  border-radius: 14px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -212,11 +239,12 @@ h1 {
   color: inherit;
   width: 100%;
   cursor: pointer;
-  transition: border-color 0.15s ease, transform 0.1s ease;
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .scenario-card:hover:not(:disabled) {
-  border-color: var(--accent-dim);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
 }
 
 .scenario-card:active:not(:disabled) {
@@ -228,50 +256,112 @@ h1 {
   opacity: 0.7;
 }
 
-.scenario-card .scenario-index {
-  font-size: 11px;
-  color: var(--accent);
-  font-weight: 700;
-  letter-spacing: 0.05em;
+.scenario-card-good { background: #0f2219; border-color: #1f5c3b; }
+.scenario-card-warn { background: #241a0c; border-color: #5a481c; }
+.scenario-card-bad { background: #25121a; border-color: #5c2130; }
+.scenario-card-info { background: #0e1826; border-color: #233a5c; }
+
+.scenario-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
+.scenario-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scenario-card-good .scenario-icon { background: rgba(53, 195, 123, 0.18); color: var(--green); }
+.scenario-card-warn .scenario-icon { background: rgba(240, 180, 41, 0.18); color: var(--amber); }
+.scenario-card-bad .scenario-icon { background: rgba(240, 86, 107, 0.18); color: var(--red); }
+.scenario-card-info .scenario-icon { background: rgba(110, 168, 254, 0.18); color: var(--info); }
+
+.scenario-card .scenario-index {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.scenario-card-good .scenario-index { color: var(--green); }
+.scenario-card-warn .scenario-index { color: var(--amber); }
+.scenario-card-bad .scenario-index { color: var(--red); }
+.scenario-card-info .scenario-index { color: var(--info); }
+
 .scenario-card h3 {
-  font-size: 15px;
+  font-size: 17px;
   margin: 0;
 }
 
-.scenario-card .scenario-tagline {
-  display: inline-block;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 2px 8px;
-  width: fit-content;
-}
-
 .scenario-card p {
-  font-size: 12.5px;
+  font-size: 13.5px;
   color: var(--muted);
   line-height: 1.5;
   margin: 0;
   flex: 1;
 }
 
+.scenario-outcome {
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.scenario-card-good .scenario-outcome { color: var(--green); }
+.scenario-card-warn .scenario-outcome { color: var(--amber); }
+.scenario-card-bad .scenario-outcome { color: var(--red); }
+.scenario-card-info .scenario-outcome { color: var(--info); }
+
 .run-btn {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: var(--accent);
   color: #06201d;
   border: none;
-  border-radius: 6px;
-  padding: 9px 14px;
+  border-radius: 8px;
+  padding: 0 16px;
+  height: 42px;
   font-weight: 700;
-  font-size: 12.5px;
+  font-size: 13.5px;
   align-self: flex-start;
+}
+
+.cta-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 42px;
+  padding: 0 18px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 13.5px;
+  text-decoration: none;
+  cursor: pointer;
+  border: 1px solid var(--border);
+}
+
+.cta-btn-primary {
+  background: var(--accent);
+  color: #06201d;
+  border: none;
+}
+
+.cta-btn-secondary {
+  background: transparent;
+  color: var(--text);
+}
+
+.cta-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
 }
 
 /* ---- workspace ---- */
@@ -280,8 +370,8 @@ h1 {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 20px;
-  margin-bottom: 20px;
+  padding: 24px;
+  margin-bottom: 24px;
 }
 
 /* ---- outcome hero ---- */
@@ -635,12 +725,39 @@ footer.note {
 
 /* ---- product explorer ---- */
 
+.explorer-workspace {
+  border: 1px solid var(--accent-dim);
+  background: linear-gradient(180deg, rgba(53, 210, 192, 0.06), transparent 40%), var(--panel);
+}
+
 .explorer-lede {
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--muted);
-  line-height: 1.5;
-  margin: 0 0 14px;
+  line-height: 1.55;
+  margin: 0 0 16px;
   max-width: 640px;
+}
+
+.explorer-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.explorer-chip {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.explorer-chip:hover {
+  border-color: var(--accent-dim);
+  color: var(--accent);
 }
 
 .explorer-search {
@@ -653,6 +770,7 @@ footer.note {
 .explorer-input {
   flex: 1;
   min-width: 200px;
+  height: 42px;
   background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: 6px;
