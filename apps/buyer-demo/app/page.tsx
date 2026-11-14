@@ -4,7 +4,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { formatEur, type AlternativeReview, type Outcome, type ScenarioResult, type StepStatus } from "../lib/scenarios";
 import { HOTEL_ESPOO_POLICY, RELIABILITY_DISCLOSURE_CAVEAT, type CheckResult } from "../lib/policyEngine";
 import type { AuditEvent, ProductFacts, ProductLookupResult, QuoteLine, TrustEnvelope } from "@aimo/shared";
-import type { RecipePlan, SeasonalSuggestions } from "../lib/llmCatalog";
+import type { RecipePlan, SeasonalSuggestions, SeasonalTheme } from "../lib/llmCatalog";
 import type { Narration } from "../lib/llmExplain";
 
 const SCENARIO_CARDS = [
@@ -1158,8 +1158,15 @@ function AiBadge() {
   return <span className="ai-badge">✦ Aimo AI · Nemotron</span>;
 }
 
-/** Proactive, suggest-only selling: seasonal themes grounded in real catalog SKUs with live price/stock. */
-function SeasonalSuggestionsCard({ onPick }: { onPick: (r: ProductLookupResult) => void }) {
+/** Proactive, suggest-only selling: seasonal themes grounded in real catalog SKUs with live price/stock.
+ *  Each theme is a starting point for the order planner, not just a single-product pick. */
+function SeasonalSuggestionsCard({
+  onPick,
+  onPlanTheme
+}: {
+  onPick: (r: ProductLookupResult) => void;
+  onPlanTheme: (theme: SeasonalTheme) => void;
+}) {
   const [data, setData] = useState<SeasonalSuggestions | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -1201,6 +1208,9 @@ function SeasonalSuggestionsCard({ onPick }: { onPick: (r: ProductLookupResult) 
                     </span>
                   </button>
                 ))}
+                <button type="button" className="run-btn run-btn-sm seasonal-plan-btn" onClick={() => onPlanTheme(t)}>
+                  Plan this menu
+                </button>
               </div>
             ))}
           </div>
@@ -1219,10 +1229,14 @@ function SeasonalSuggestionsCard({ onPick }: { onPick: (r: ProductLookupResult) 
  *  evaluated through the unchanged quote → policy pipeline. */
 function RecipePlanner({
   onPickLine,
-  onFindSubstitute
+  onFindSubstitute,
+  pendingPlan
 }: {
   onPickLine: (r: ProductLookupResult, units: number) => void;
   onFindSubstitute: (r: ProductLookupResult) => void;
+  /** Set by a seasonal theme's "Plan this menu" button — a new nonce triggers a run even if the
+   *  dish text is unchanged from a previous request. */
+  pendingPlan?: { dish: string; covers: number; nonce: number } | null;
 }) {
   const [dish, setDish] = useState("");
   const [covers, setCovers] = useState(40);
@@ -1253,6 +1267,11 @@ function RecipePlanner({
     }
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (pendingPlan) run(pendingPlan.dish, pendingPlan.covers);
+  }, [pendingPlan?.nonce]);
+
   const priced = plan?.lines.filter((l) => l.product?.envelope.claim.price) ?? [];
   const estTotal = priced.reduce((sum, l) => sum + l.product!.envelope.claim.price!.amount * l.order_units, 0);
 
@@ -1260,12 +1279,15 @@ function RecipePlanner({
     <div className="ai-panel" id="recipe-planner">
       <div className="ai-panel-head">
         <AiBadge />
-        <span className="ai-panel-title">Plan an order from a dish</span>
+        <span className="ai-panel-title">Plan an order</span>
       </div>
       <p className="ai-panel-lede">
-        Describe what the chef is cooking. Aimo AI turns it into ingredients, finds real SKUs in the 17,546-product catalog and sizes each
-        line to your covers.
+        Start with a dish, menu or seasonal occasion. Aimo AI suggests ingredients and finds matching products in the real,
+        17,546-SKU catalog, sized to your covers.
       </p>
+      <div className="section-title" style={{ margin: "4px 0 10px" }}>
+        Or create your own menu
+      </div>
       <div className="explorer-chips">
         {RECIPE_EXAMPLES.map((ex) => (
           <button key={ex.dish} type="button" className="explorer-chip" onClick={() => run(ex.dish, ex.covers)}>
@@ -1384,6 +1406,7 @@ function RecipePlanner({
 
 function ProductExplorer() {
   const [explorerTab, setExplorerTab] = useState<"search" | "plan">("search");
+  const [pendingPlan, setPendingPlan] = useState<{ dish: string; covers: number; nonce: number } | null>(null);
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<(ProductLookupResult & { ai_reason?: string })[] | null>(null);
@@ -1540,7 +1563,7 @@ function ProductExplorer() {
             <SearchIcon />
           </span>
           <span className="explorer-tab-title">Find products</span>
-          <span className="explorer-tab-desc">Search, discover and find compliant substitutes.</span>
+          <span className="explorer-tab-desc">Search the catalogue, explore products and find substitutes.</span>
         </button>
         <button
           type="button"
@@ -1553,7 +1576,7 @@ function ProductExplorer() {
             <ChefHatIcon />
           </span>
           <span className="explorer-tab-title">Plan an order</span>
-          <span className="explorer-tab-desc">Describe a dish, specify covers and generate a proposed basket.</span>
+          <span className="explorer-tab-desc">Describe a menu or dish and let AI build a proposed basket.</span>
         </button>
       </div>
       <p className="explorer-lede" style={{ marginBottom: 12 }}>
@@ -1562,8 +1585,6 @@ function ProductExplorer() {
 
       {explorerTab === "search" && (
         <>
-          <SeasonalSuggestionsCard onPick={(r) => selectProduct(r)} />
-
           <div className="section-title" style={{ margin: "0 0 10px" }}>
             Recommended products to try
           </div>
@@ -1637,7 +1658,20 @@ function ProductExplorer() {
       )}
 
       {explorerTab === "plan" && (
-        <RecipePlanner onPickLine={(r, units) => selectProduct(r, units)} onFindSubstitute={(r) => findSubstitutesFor(r)} />
+        <>
+          <SeasonalSuggestionsCard
+            onPick={(r) => selectProduct(r)}
+            onPlanTheme={(t) => {
+              setPendingPlan({ dish: `${t.title}: ${t.pitch}`, covers: 40, nonce: Date.now() });
+              document.getElementById("recipe-planner")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          />
+          <RecipePlanner
+            onPickLine={(r, units) => selectProduct(r, units)}
+            onFindSubstitute={(r) => findSubstitutesFor(r)}
+            pendingPlan={pendingPlan}
+          />
+        </>
       )}
 
       {selected && (

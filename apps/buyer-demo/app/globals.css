@@ -2317,6 +2317,10 @@ footer .note {
   gap: 8px;
   font-size: 13px;
 }
+.seasonal-plan-btn {
+  margin-top: 4px;
+  align-self: flex-start;
+}
 .explorer-chip-ai {
   border-color: var(--blueberry);
   background: var(--lavender);
