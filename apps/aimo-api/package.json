@@ -9,7 +9,10 @@
     "build": "tsc -p tsconfig.json",
     "migrate": "tsx scripts/migrate.ts",
     "seed": "tsx scripts/seed.ts",
-    "build-facts": "tsx scripts/build-product-facts.ts"
+    "build-facts": "tsx scripts/build-product-facts.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test test/*.test.ts",
+    "dev:local": "tsx scripts/dev-local.ts"
   },
   "dependencies": {
     "@aimo/shared": "0.1.0",
@@ -19,6 +22,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
     "@types/node": "^20.14.2",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"

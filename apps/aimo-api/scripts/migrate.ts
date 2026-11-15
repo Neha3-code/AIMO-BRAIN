@@ -1,86 +1,11 @@
 import "dotenv/config";
-import { query } from "../src/db.js";
+import { runMigrations } from "../src/migrations.js";
 
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS products (
-  id TEXT PRIMARY KEY,
-  name_en TEXT NOT NULL,
-  name_fi TEXT,
-  name_sv TEXT,
-  category TEXT,
-  country_of_origin TEXT,
-  vendor_name TEXT,
-  allowed_lot_size NUMERIC,
-  sales_unit TEXT,
-  allergens JSONB NOT NULL DEFAULT '[]',
-  substitutions JSONB NOT NULL DEFAULT '[]',
-  carbon_footprint_kg_co2e_per_kg NUMERIC,
-  delivery_reliability NUMERIC
-);
-
-CREATE INDEX IF NOT EXISTS idx_products_category ON products (category);
-CREATE INDEX IF NOT EXISTS idx_products_name_en ON products USING gin (to_tsvector('simple', name_en));
-
-CREATE TABLE IF NOT EXISTS buyers (
-  id TEXT PRIMARY KEY,
-  display_name TEXT NOT NULL,
-  contract_tier TEXT NOT NULL,
-  credit_limit_eur NUMERIC NOT NULL,
-  aimo_side_auto_approve_limit_eur NUMERIC NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS quotes (
-  id TEXT PRIMARY KEY,
-  buyer_id TEXT NOT NULL REFERENCES buyers(id),
-  lines JSONB NOT NULL,
-  issued_at TIMESTAMPTZ NOT NULL,
-  expires_at TIMESTAMPTZ NOT NULL,
-  requested_delivery_date TEXT,
-  status TEXT NOT NULL DEFAULT 'active',
-  total_eur NUMERIC NOT NULL
-);
-
-ALTER TABLE quotes ADD COLUMN IF NOT EXISTS requested_delivery_date TEXT;
-
-CREATE TABLE IF NOT EXISTS orders (
-  id TEXT PRIMARY KEY,
-  quote_id TEXT NOT NULL REFERENCES quotes(id),
-  buyer_id TEXT NOT NULL REFERENCES buyers(id),
-  status TEXT NOT NULL,
-  approval_required BOOLEAN NOT NULL,
-  approval_owner TEXT,
-  approval_reason TEXT,
-  requested_amount_eur NUMERIC,
-  approved_amount_eur NUMERIC,
-  lines_confirmed JSONB NOT NULL DEFAULT '[]',
-  lines_held JSONB NOT NULL DEFAULT '[]',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS audit_events (
-  id BIGSERIAL PRIMARY KEY,
-  order_id TEXT NOT NULL,
-  timestamp TIMESTAMPTZ NOT NULL DEFAULT now(),
-  actor TEXT NOT NULL,
-  action TEXT NOT NULL,
-  reasons JSONB NOT NULL DEFAULT '[]',
-  policy_version TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_audit_events_order_id ON audit_events (order_id);
-`;
-
-async function main() {
-  // The HTTP driver only runs one statement per request, so split on blank-line-separated statements.
-  const statements = SCHEMA.split(";").map((s) => s.trim()).filter(Boolean);
-  for (const statement of statements) {
-    await query(statement);
-  }
-  console.log("Migration complete.");
-}
-
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// Applies apps/aimo-api/migrations/*.sql in order, recording each in schema_migrations.
+// 001_baseline.sql is the original demo schema and is a no-op on an existing database.
+runMigrations(console.log)
+  .then((ran) => console.log(ran.length ? `Migration complete (${ran.length} applied).` : "Already up to date."))
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });

@@ -11,7 +11,9 @@
     "dev:web": "npm run dev -w @aimo/buyer-demo",
     "seed": "npm run seed -w @aimo/aimo-api",
     "migrate": "npm run migrate -w @aimo/aimo-api",
-    "demo": "npm run demo -w @aimo/buyer-demo"
+    "demo": "npm run demo -w @aimo/buyer-demo",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
   },
   "engines": {
     "node": ">=20"

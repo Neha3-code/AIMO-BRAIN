@@ -13,7 +13,8 @@ function loadKeyMap(): Map<string, string> {
   return map;
 }
 
-const KEY_MAP = loadKeyMap();
+// Read on first use, not at import, so configuration is loaded (and testable) first.
+let keyMap: Map<string, string> | null = null;
 
 export interface AuthedRequest extends FastifyRequest {
   buyerId?: string;
@@ -21,9 +22,10 @@ export interface AuthedRequest extends FastifyRequest {
 
 export async function requireBuyerAuth(request: AuthedRequest, reply: FastifyReply) {
   const apiKey = request.headers["x-api-key"];
-  if (typeof apiKey !== "string" || !KEY_MAP.has(apiKey)) {
+  keyMap ??= loadKeyMap();
+  if (typeof apiKey !== "string" || !keyMap.has(apiKey)) {
     reply.code(401).send({ error: "unauthorized", message: "Missing or invalid X-API-Key" });
     return;
   }
-  request.buyerId = KEY_MAP.get(apiKey);
+  request.buyerId = keyMap.get(apiKey);
 }
