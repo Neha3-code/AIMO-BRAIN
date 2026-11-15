@@ -1183,7 +1183,9 @@ function ProductCard({
   onFindSubstitutes,
   substitutesLoading,
   knownNoSubstitutes,
-  aiReason
+  aiReason,
+  suggestedUnits,
+  suggestedUnitsNote
 }: {
   r: ProductLookupResult;
   aiReason?: string;
@@ -1193,6 +1195,10 @@ function ProductCard({
   substitutesLoading: boolean;
   /** Learned from an earlier lookup in this session — covers an aimo-api that doesn't report the count yet. */
   knownNoSubstitutes: boolean;
+  /** Computed from this product's real catalog net weight against the quantity the buyer actually
+   *  stated — never an AI guess. Undefined/null when no quantity was stated or the pack size isn't known. */
+  suggestedUnits?: number | null;
+  suggestedUnitsNote?: string | null;
 }) {
   const containsCodes = r.allergens.filter((a) => a.relation === "CONTAINS").map((a) => a.code);
   const bannedHits = bannedAllergenHits(r.allergens);
@@ -1245,9 +1251,12 @@ function ProductCard({
             : `${subCount} registered substitute${subCount === 1 ? "" : "s"} in the catalog.`}
         </div>
       )}
+      {suggestedUnits != null && suggestedUnitsNote && (
+        <div className="suggested-qty-note">📏 {suggestedUnitsNote}</div>
+      )}
       <div className="explorer-item-actions">
         <button type="button" className={outOfStock ? "run-btn run-btn-secondary run-btn-sm" : "run-btn run-btn-sm"} onClick={onSelect}>
-          Select product
+          {suggestedUnits != null ? `Select ${suggestedUnits} unit${suggestedUnits === 1 ? "" : "s"}` : "Select product"}
         </button>
         <button
           type="button"
@@ -1563,9 +1572,11 @@ function ProductExplorer() {
   const [pendingPlan, setPendingPlan] = useState<{ dish: string; covers: number; nonce: number } | null>(null);
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState<(ProductLookupResult & { ai_reason?: string })[] | null>(null);
+  const [searchResults, setSearchResults] = useState<
+    (ProductLookupResult & { ai_reason?: string; suggested_units?: number | null; suggested_units_note?: string | null })[] | null
+  >(null);
   const [aiMode, setAiMode] = useState(true);
-  const [searchMeta, setSearchMeta] = useState<{ mode: "ai" | "keyword"; interpretation?: string; ai_error?: string } | null>(null);
+  const [searchMeta, setSearchMeta] = useState<{ mode: "ai" | "keyword"; interpretation?: string; ai_error?: string; quantity_needed?: string | null } | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [selected, setSelected] = useState<ProductLookupResult | null>(null);
   const [qty, setQty] = useState(10);
@@ -1601,7 +1612,10 @@ function ProductExplorer() {
 
   function selectProduct(r: ProductLookupResult, units?: number) {
     setSelected(r);
-    if (units !== undefined) setQty(units);
+    // Always set an explicit quantity on selection — never leave whatever was left over from a
+    // previously selected product (e.g. a recipe-planner line), since that number has nothing to
+    // do with this one.
+    setQty(units !== undefined ? units : 1);
     setCustomResult(null);
     scrollTo("selected");
   }
@@ -1619,7 +1633,7 @@ function ProductExplorer() {
         body: JSON.stringify({ query: q, ai })
       });
       const data = await res.json();
-      setSearchMeta(data.mode ? { mode: data.mode, interpretation: data.interpretation, ai_error: data.ai_error } : null);
+      setSearchMeta(data.mode ? { mode: data.mode, interpretation: data.interpretation, ai_error: data.ai_error, quantity_needed: data.quantity_needed } : null);
       if (data.error) {
         setSearchError(data.message ?? data.error);
         setSearchResults([]);
@@ -1795,6 +1809,12 @@ function ProductExplorer() {
                   <AiBadge /> {searchMeta.interpretation}
                 </p>
               )}
+              {searchMeta?.quantity_needed && (
+                <p className="mock-note">
+                  📏 Quantity suggestions below are computed against <strong>{searchMeta.quantity_needed}</strong> from each product&apos;s real
+                  catalog pack size — not an AI guess.
+                </p>
+              )}
               {searchMeta?.ai_error && <p className="mock-note">AI search unavailable ({searchMeta.ai_error}) — showing literal name matches instead.</p>}
               {searchResults.length === 0 && <p className="mock-note">No matches in the catalog for that search.</p>}
               {searchResults.map((r) => (
@@ -1802,11 +1822,13 @@ function ProductExplorer() {
                   r={r}
                   key={r.envelope.claim.product_id}
                   isSelected={selected?.envelope.claim.product_id === r.envelope.claim.product_id}
-                  onSelect={() => selectProduct(r)}
+                  onSelect={() => selectProduct(r, r.suggested_units ?? undefined)}
                   onFindSubstitutes={() => findSubstitutesFor(r)}
                   substitutesLoading={substitutesLoadingId === r.envelope.claim.product_id}
                   knownNoSubstitutes={noSubstituteIds.has(r.envelope.claim.product_id)}
                   aiReason={r.ai_reason}
+                  suggestedUnits={r.suggested_units}
+                  suggestedUnitsNote={r.suggested_units_note}
                 />
               ))}
             </div>

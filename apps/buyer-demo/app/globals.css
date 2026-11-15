@@ -2271,6 +2271,13 @@ footer .note a {
   color: var(--muted, #5b6770);
 }
 
+.suggested-qty-note {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--petrol);
+}
+
 .explorer-pending {
   display: flex;
   align-items: center;

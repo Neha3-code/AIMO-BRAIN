@@ -135,28 +135,43 @@ export interface AiSearchResult {
   mode: "ai";
   interpretation: string;
   queries: string[];
-  results: (ProductLookupResult & { ai_reason?: string })[];
+  /** Quantity the buyer actually stated (e.g. "1000 l", "50 kg") — only set when the query named
+   *  one explicitly, never guessed. Search never invents a quantity the buyer didn't give it. */
+  quantity_needed: string | null;
+  results: (ProductLookupResult & {
+    ai_reason?: string;
+    /** How many sales units of THIS product cover quantity_needed, from its real catalog net
+     *  weight (dilution-aware, same math as the recipe planner) — null when quantity_needed wasn't
+     *  given, or this product's pack size isn't in the catalog. Never an AI guess. */
+    suggested_units: number | null;
+    suggested_units_note: string | null;
+  })[];
 }
 
 export async function aiSearch(userQuery: string): Promise<AiSearchResult> {
-  const plan = await chatJSON<{ interpretation: string; queries: string[] }>([
+  const plan = await chatJSON<{ interpretation: string; queries: string[]; quantity_needed: string | null }>([
     {
       role: "system",
       content: `You help a professional hotel kitchen buyer in Finland search a foodservice wholesale catalog of 17,546 products.
 ${KEYWORD_RULES}
-Return JSON: {"interpretation": "<one short sentence restating what the buyer needs>", "queries": ["...", ...]} with 4-8 queries covering different ways the need could be satisfied.`
+If the buyer's message states an explicit quantity to buy (e.g. "1000 litres", "50 kg", "200 portions"), extract it verbatim into quantity_needed as a short "<number> <unit>" string (e.g. "1000 l", "50 kg"). If no quantity is stated, quantity_needed is null — never invent one.
+Return JSON: {"interpretation": "<one short sentence restating what the buyer needs>", "queries": ["...", ...], "quantity_needed": "<string or null>"} with 4-8 queries covering different ways the need could be satisfied.`
     },
     { role: "user", content: userQuery }
   ]);
 
   const queries = (plan.queries ?? []).filter((q) => typeof q === "string").slice(0, 8);
+  const quantityNeeded = typeof plan.quantity_needed === "string" ? plan.quantity_needed : null;
   const candidates = pool([userQuery, ...queries], 10, 70);
-  if (candidates.length === 0) return { mode: "ai", interpretation: plan.interpretation ?? "", queries, results: [] };
+  if (candidates.length === 0) {
+    return { mode: "ai", interpretation: plan.interpretation ?? "", queries, quantity_needed: quantityNeeded, results: [] };
+  }
 
   const ranked = await chatJSON<{ picks: { id: string; why: string }[] }>([
     {
       role: "system",
       content: `You rank wholesale catalog products for a hotel kitchen buyer. Pick ONLY products from the candidate list that genuinely fit the need — exclude non-food items and poor matches. Best fit first, at most 8.
+Describe only what the product IS and why it suits the need (ingredient type, dietary fit, grade). Never claim it fits or is efficient for a stated order quantity/volume — this step doesn't check pack sizes, so any quantity claim would be a guess.
 Return JSON: {"picks": [{"id": "<id from list>", "why": "<max 12 words: why it fits>"}]}`
     },
     { role: "user", content: `Need: ${userQuery}\n\nCandidates (id | name):\n${candidateList(candidates)}` }
@@ -165,14 +180,26 @@ Return JSON: {"picks": [{"id": "<id from list>", "why": "<max 12 words: why it f
   const valid = new Set(candidates.map((c) => c.id));
   const picks = (ranked.picks ?? []).filter((p) => valid.has(String(p.id))).slice(0, 8);
   const live = await resolveLive(picks.map((p) => String(p.id)));
+  const needKg = quantityNeeded !== null ? parseKg(quantityNeeded) : null;
   const results = picks
     .map((p) => {
       const r = live.get(String(p.id));
-      return r ? { ...r, ai_reason: policyCaveat(r) ?? p.why } : null;
+      if (!r) return null;
+      const unitKg = r.net_weight_kg_per_sales_unit ?? null;
+      const dilution = dilutionMultiplier(r.name);
+      const effectiveUnitKg = unitKg !== null ? unitKg * dilution : null;
+      const suggestedUnits = needKg !== null && effectiveUnitKg ? Math.ceil(needKg / effectiveUnitKg - 1e-9) : null;
+      const suggestedUnitsNote =
+        suggestedUnits !== null
+          ? dilution !== 1
+            ? `${fmtKg(unitKg!)} concentrate × ${dilution} (dilution) = ${fmtKg(effectiveUnitKg!)} prepared → ${suggestedUnits} unit${suggestedUnits === 1 ? "" : "s"} to cover ${quantityNeeded}.`
+            : `Catalog weight ${fmtKg(unitKg!)} per unit → ${suggestedUnits} unit${suggestedUnits === 1 ? "" : "s"} to cover ${quantityNeeded}.`
+          : null;
+      return { ...r, ai_reason: policyCaveat(r) ?? p.why, suggested_units: suggestedUnits, suggested_units_note: suggestedUnitsNote };
     })
-    .filter((r): r is ProductLookupResult & { ai_reason: string } => r !== null);
+    .filter((r): r is ProductLookupResult & { ai_reason: string; suggested_units: number | null; suggested_units_note: string | null } => r !== null);
 
-  return { mode: "ai", interpretation: plan.interpretation ?? "", queries, results };
+  return { mode: "ai", interpretation: plan.interpretation ?? "", queries, quantity_needed: quantityNeeded, results };
 }
 
 // ---------------------------------------------------------------------------------------------
