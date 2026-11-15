@@ -2017,6 +2017,11 @@ footer .note {
   margin: 0;
 }
 
+footer .note a {
+  color: var(--lime);
+  text-decoration: underline;
+}
+
 /* ---- explorer result cards (price row + metric grid) ---- */
 
 .explorer-item {

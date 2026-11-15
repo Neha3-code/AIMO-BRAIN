@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AIMO BRAIN Pitch Deck</title>
+<style>
+:root{--bg:#071216;--panel:#0d2025;--panel2:#10282d;--line:#214148;--text:#eef8f6;--muted:#9bb5b6;--teal:#43ddc3;--teal2:#1da994;--amber:#f4c36b;--red:#ff817b;--green:#7ce0ad;color-scheme:dark}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+body{overflow:hidden;background-image:radial-gradient(ellipse at 78% 10%,rgba(35,155,142,.14),transparent 34%),radial-gradient(ellipse at 5% 90%,rgba(34,104,120,.12),transparent 35%)}
+button{font:inherit;cursor:pointer}
+.top{height:68px;display:flex;align-items:center;justify-content:space-between;padding:0 max(4vw,16px);border-bottom:1px solid rgba(111,170,170,.16);position:absolute;inset:0 0 auto;z-index:5;background:rgba(7,18,22,.82);backdrop-filter:blur(14px)}
+.brand{display:flex;align-items:center;gap:12px;font-weight:850;letter-spacing:.14em;font-size:14px}.mark{width:28px;height:28px;border:1px solid var(--teal);border-radius:9px;display:grid;place-items:center;color:var(--teal);font-size:13px}
+.topright{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px}.topright a{color:var(--teal);text-decoration:none;border:1px solid var(--line);padding:9px 13px;border-radius:8px}
+.deck{height:100%;padding:92px max(5vw,16px) 86px;position:relative}
+.slide{display:none;max-width:1280px;height:100%;margin:auto;animation:fade .35s ease;overflow:auto;padding:1.5vh 0 2vh}.slide.active{display:block}
+@keyframes fade{from{opacity:.3;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.slide{animation:none}}
+.eyebrow{color:var(--teal);font-size:11px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;margin-bottom:18px}
+h1{font-size:clamp(44px,6.7vw,92px);line-height:.98;letter-spacing:-.065em;margin:0 0 24px;font-weight:850;max-width:1000px;text-wrap:balance}
+h2{font-size:clamp(32px,4.3vw,58px);line-height:1.02;letter-spacing:-.05em;margin:0 0 16px;text-wrap:balance}
+h3{font-size:19px;margin:0 0 9px;letter-spacing:-.02em}
+p{color:var(--muted);line-height:1.6;font-size:16px;margin:0}
+.lead{font-size:clamp(18px,2vw,24px);max-width:800px;color:#c4d7d6}
+.accent{color:var(--teal)}.muted{color:var(--muted)}
+.hero-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:5vw;align-items:center;height:100%}
+.hero-art{border:1px solid var(--line);border-radius:24px;padding:26px;background:linear-gradient(145deg,rgba(19,57,62,.8),rgba(9,24,29,.9));position:relative;overflow:hidden;min-height:370px;display:flex;flex-direction:column;justify-content:center;gap:18px}
+.hero-art:after{content:"";position:absolute;width:280px;height:280px;border:1px solid rgba(67,221,195,.18);border-radius:50%;right:-90px;top:-80px;box-shadow:0 0 0 35px rgba(67,221,195,.035),0 0 0 75px rgba(67,221,195,.025)}
+.agent{border:1px solid var(--line);background:rgba(6,19,23,.75);border-radius:14px;padding:18px;position:relative;z-index:1}
+.agent small{color:var(--teal);letter-spacing:.13em;font-weight:800;font-size:10px}.agent strong{display:block;font-size:21px;margin:7px 0}.agent span{font-size:13px;color:var(--muted)}
+.connector{height:24px;border-left:1px dashed var(--teal);margin-left:34px;position:relative;z-index:1}
+.pill{display:inline-flex;border:1px solid var(--line);padding:8px 11px;border-radius:99px;color:#c2d8d6;font-size:12px;gap:7px;align-items:center}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--teal);display:inline-block}
+.kicker{font-size:12px;color:var(--muted);letter-spacing:.13em;text-transform:uppercase}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:28px}
+.card{background:linear-gradient(145deg,var(--panel),rgba(10,28,33,.9));border:1px solid var(--line);border-radius:16px;padding:22px;min-height:170px;min-width:0}
+.card .num{font-size:11px;color:var(--teal);letter-spacing:.15em;font-weight:800;margin-bottom:22px}.card p{font-size:14px}
+.quote{border-left:3px solid var(--teal);padding:4px 0 4px 18px;font-size:clamp(20px,2.3vw,29px);line-height:1.35;font-weight:650;margin-top:30px;max-width:920px}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:26px}
+.panel{border:1px solid var(--line);border-radius:18px;background:var(--panel);padding:24px;min-width:0}
+.panel.buyer{border-top:3px solid var(--teal)}.panel.supplier{border-top:3px solid #8fa9ff}
+.panel.discover{border-top:3px solid var(--teal)}.panel.plan{border-top:3px solid var(--amber)}
+.panel ul{padding-left:18px;color:var(--muted);line-height:1.9;font-size:14px}
+.owner{font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--teal);font-weight:800;margin-bottom:10px}
+.owner.blue{color:#a9baff}.owner.amber{color:var(--amber)}
+.flow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:25px}
+.flow span{border:1px solid var(--line);background:var(--panel);padding:12px 15px;border-radius:10px;font-size:13px;font-weight:650}
+.flow b{color:var(--teal);font-size:18px}
+.interactive{margin-top:24px;border:1px solid var(--line);border-radius:18px;padding:22px;background:linear-gradient(145deg,#0e2429,#09191e)}
+.controls{display:flex;gap:9px;flex-wrap:wrap;margin:15px 0}
+.choice{border:1px solid var(--line);background:#0a1a1f;color:var(--muted);padding:10px 14px;border-radius:9px;font-size:13px}
+.choice.active{border-color:var(--teal);color:var(--teal);background:rgba(67,221,195,.08)}
+.result{display:grid;grid-template-columns:1fr auto;align-items:center;gap:15px;border:1px solid var(--line);border-radius:12px;padding:16px;background:#08171b}
+.result>div{min-width:0}
+.status{font-size:11px;font-weight:850;letter-spacing:.12em;text-transform:uppercase;padding:8px 10px;border-radius:7px;white-space:nowrap}
+.pass{color:var(--green);background:rgba(124,224,173,.1)}.review{color:var(--amber);background:rgba(244,195,107,.1)}.block{color:var(--red);background:rgba(255,129,123,.1)}
+.two-cols{display:grid;grid-template-columns:1.1fr .9fr;gap:20px;margin-top:26px}
+.metric{font-size:38px;letter-spacing:-.05em;font-weight:800;color:var(--teal);font-variant-numeric:tabular-nums}
+.auditline{display:grid;grid-template-columns:100px 1fr auto;gap:12px;padding:13px 0;border-bottom:1px solid rgba(90,140,145,.2);font-size:13px;align-items:center}
+.auditline:last-child{border:0}.auditline span:first-child{color:var(--teal);font-weight:750}
+.arch{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;margin-top:25px}
+.archbox{border:1px solid var(--line);border-radius:14px;padding:18px;background:var(--panel);text-align:center;min-width:0}.archbox strong{display:block;margin-bottom:7px}.archbox small{color:var(--muted)}
+.archmid{color:var(--teal);font-size:23px}
+.proof{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:24px}
+.proof .card{min-height:120px;padding:18px}.proof .metric{font-size:31px}.proof p{font-size:12px}
+.footerquote{margin-top:26px;color:#d9e9e7;font-weight:700;font-size:20px}
+.bottom{position:absolute;inset:auto 0 0;height:68px;border-top:1px solid rgba(111,170,170,.16);display:flex;align-items:center;justify-content:space-between;padding:0 max(4vw,16px);background:rgba(7,18,22,.9);z-index:5}
+.navbtn{border:1px solid var(--line);background:var(--panel);color:var(--text);padding:10px 14px;border-radius:9px}.navbtn:disabled{opacity:.25;cursor:default}
+.navbtn:focus-visible,.choice:focus-visible,.dots button:focus-visible,a:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+.dots{display:flex;gap:9px}.dots button{width:7px;height:7px;padding:0;border:0;border-radius:50%;background:#426066}.dots button.active{background:var(--teal);box-shadow:0 0 0 4px rgba(67,221,195,.12)}
+.counter{font-size:12px;color:var(--muted);min-width:55px;text-align:center;font-variant-numeric:tabular-nums}
+.notes{position:absolute;z-index:10;right:24px;bottom:82px;width:min(430px,calc(100vw - 48px));max-height:60vh;overflow:auto;background:#10262b;border:1px solid var(--teal);border-radius:14px;padding:20px;box-shadow:0 20px 70px #000a;display:none}.notes.open{display:block}.notes h3{color:var(--teal)}.notes p{font-size:13px}
+.notehint{font-size:11px;color:var(--muted)}
+@media(max-width:760px){.top{height:58px;padding:0 18px}.topright .tag{display:none}.deck{padding:76px 20px 82px}.hero-grid,.split,.two-cols{grid-template-columns:1fr}.hero-art{min-height:260px}.grid3{grid-template-columns:1fr}.proof{grid-template-columns:repeat(2,1fr)}h1{font-size:49px}.arch{grid-template-columns:1fr}.archmid{transform:rotate(90deg);text-align:center}.bottom{height:62px;padding:0 18px}.card{min-height:unset}.slide{padding-top:12px}.topright a{padding:8px}.auditline{grid-template-columns:76px 1fr}.auditline .status{grid-column:2;justify-self:start}.result{grid-template-columns:1fr}.status{justify-self:start}}
+
+@media print {
+  .top, .bottom, .notes { display: none !important; }
+  html, body { height: auto !important; overflow: visible !important; }
+  .deck { height: auto !important; padding: 10mm 12mm !important; overflow: visible !important; }
+  .slide { display: block !important; height: auto !important; overflow: visible !important; animation: none !important; page-break-after: always; padding: 4mm 0 !important; }
+  .slide:last-child { page-break-after: auto; }
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+ <div class="brand"><span class="mark">A</span> AIMO BRAIN</div>
+ <div class="topright"><span class="tag">JUNCTION26 · VALIO AIMO CHALLENGE</span><a href="https://aimobrain.vercel.app/" target="_blank" rel="noopener">OPEN LIVE DEMO ↗</a></div>
+</header>
+<main class="deck">
+<section class="slide active" data-title="The problem" data-notes="Open with the restaurant procurement problem. Emphasise that the buyer and supplier each have legitimate but different constraints. Avoid claiming quantified industry savings unless you have measured evidence.">
+ <div class="hero-grid">
+  <div>
+   <div class="eyebrow">01 / The problem</div>
+   <h1>Buying food is easy.<br><span class="accent">Agreeing the trade</span> is not.</h1>
+   <p class="lead">A kitchen needs the right product, at the right price, with the right ingredients and delivery. A supplier has its own stock, credit limits and approval rules.</p>
+   <div class="quote">A product match is not the same as an acceptable transaction.</div>
+  </div>
+  <div class="hero-art">
+   <div class="agent"><small>BUYER SIDE</small><strong>“Will this work for my kitchen?”</strong><span>Budget · allergens · recipe · carbon · delivery</span></div>
+   <div class="connector"></div>
+   <div class="agent"><small>SUPPLIER SIDE</small><strong>“Can we accept this order?”</strong><span>Availability · commercial limits · approvals</span></div>
+   <div style="position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end"><span class="pill"><i class="dot"></i> Two sets of rules</span><span class="pill"><i class="dot"></i> One trusted trade</span></div>
+  </div>
+ </div>
+</section>
+<section class="slide" data-title="The solution" data-notes="Explain that this is not one AI with one shared rulebook. Buyer-owned and supplier-owned policies remain separate. Nemotron interprets and proposes; the policy engines decide.">
+ <div class="eyebrow">02 / The solution</div>
+ <h2>Two agents. Two independent rulebooks.<br><span class="accent">One trusted transaction.</span></h2>
+ <p class="lead">AIMO BRAIN lets autonomous purchasing agents work across the buyer–supplier boundary without giving either side control over the other's policies.</p>
+ <div class="split">
+  <div class="panel buyer"><div class="owner">Buyer-controlled</div><h3>AIMO BRAIN buyer agent</h3><p>Protects the kitchen's requirements.</p><ul><li>Budget and product preferences</li><li>Allergens and recipe compatibility</li><li>Carbon limits and delivery tolerance</li><li>Buyer-owned approval rules</li></ul></div>
+  <div class="panel supplier"><div class="owner blue">Supplier-controlled</div><h3>Aimo supplier agent</h3><p>Applies the supplier's commercial constraints.</p><ul><li>Credit limits</li><li>Commercial approval ceilings</li><li>Supplier-owned human approvals</li><li>Availability and quote conditions</li></ul></div>
+ </div>
+ <div class="flow"><span>Kitchen request</span><b>→</b><span>AI understands & proposes</span><b>→</b><span>Buyer policy</span><b>+</b><span>Supplier policy</span><b>→</b><span>Order decision</span></div>
+ <div class="quote">AI proposes. Independent policy engines decide. Neither party overrides the other's rules.</div>
+</section>
+<section class="slide" data-title="Proof, not assertion" data-notes="This slide exists because a reviewer pushed back: only claim what the demo can show. Walk through each row live if you have time — Scenario 02's raw API rejection is the single most convincing click in the whole demo. Open it from the Scenarios tab, run it, then expand 'Technical detail: raw API response' under Approval ownership enforced.">
+ <div class="eyebrow">03 / Proof, not assertion</div>
+ <h2>Every claim on the last slide.<br><span class="accent">Live in the demo, not just here.</span></h2>
+ <p class="lead">A pitch should only claim what the product can actually show. Here is exactly where each claim comes from.</p>
+ <div class="auditline"><span>Two agents</span><span>Run Scenario 02 (Approval). Buyer policy and supplier policy are computed by two separate services and can disagree — shown side by side as independent panels.</span><span class="pill"><i class="dot"></i> Live</span></div>
+ <div class="auditline"><span>No override</span><span>Scenario 02 then attempts a buyer-side approval on an Aimo-owned hold. The real server rejects it — the raw HTTP response is visible under "Technical detail: raw API response."</span><span class="pill"><i class="dot"></i> Live API call</span></div>
+ <div class="auditline"><span>Live data</span><span>Every product's trust envelope shows an observed_at timestamp that changes on every request, sourced from the real Junction26 sandbox — expand "Raw trust envelope JSON" to see it.</span><span class="pill"><i class="dot"></i> Live</span></div>
+ <div class="auditline"><span>Audited</span><span>GET /v1/audit/{orderId} on aimo-api returns the real audit trail for that order — actor, timestamp and reason per event — shown under "Technical evidence."</span><span class="pill"><i class="dot"></i> Live</span></div>
+ <div class="quote">Nothing on these slides that the demo can't show on request.</div>
+</section>
+<section class="slide" data-title="See the rules, not just the outcome" data-notes="New this round: the demo now lets you actually inspect the two rulebooks and switch seats, instead of only ever seeing a pass/fail reason after the fact. Click through the toggle live — point out that the locked card isn't just hidden by CSS, it's a genuinely separate code path with no shared import between the two services. The guardrail nuance (credit limit never hard-rejects, only escalates) is a good answer if a judge asks 'what happens when a buyer is over budget' — it shows you understand your own system's edge cases.">
+ <div class="eyebrow">04 / See the rules, not just the outcome</div>
+ <h2>Don't just trust the decision.<br><span class="accent">Inspect the rule behind it.</span></h2>
+ <p class="lead">Every policy claim on this deck is backed by a rule you can read, and a toggle that proves neither side can see the other's.</p>
+ <div class="interactive">
+  <div class="kicker">Live in the demo — switch seats, no login needed</div>
+  <div class="controls">
+   <button class="choice active" data-case="buyer">Buyer view</button>
+   <button class="choice" data-case="supplier">Supplier view</button>
+  </div>
+  <div class="result"><div><div id="rcandidate" style="font-weight:800;font-size:18px">Buyer-owned — Hotel Espoo's kitchen policy</div><p id="rreason" style="font-size:14px;margin-top:7px">Banned allergen code AW (tree nuts) · max delivery deviation 1 day · minimum delivery reliability 95% for an AI-picked substitute · max carbon increase 20% over the original.</p></div><span class="status pass" id="rstatus">Visible</span></div>
+  <p class="notehint" style="margin-top:12px" id="rlocked">🔒 Aimo's credit limit and auto-approve ceiling are not shown from this seat.</p>
+ </div>
+ <div class="auditline"><span>Nuance</span><span>Scenario 02's order (€8,407.20) exceeds both the €5,000 credit limit and the €2,000 auto-approve ceiling — the guardrail never hard-rejects on either by itself, only escalates to a human. A real decline only happens if that human then declines it.</span><span class="pill"><i class="dot"></i> Verified live</span></div>
+ <div class="quote">Transparency isn't a UI feature here. It's the whole pitch.</div>
+</section>
+<section class="slide" data-title="AI-assisted discovery and planning" data-notes="This is the newest layer: two entry points into the same policy pipeline. Find products is for a known need; Plan an order turns a dish, menu or seasonal occasion into a full basket. Walk through the four demo buttons — each is a real line from a live test run this session, not a mockup. The point: the AI is candid about its own confidence, including when it has to say no.">
+ <div class="eyebrow">05 / AI-assisted discovery &amp; planning</div>
+ <h2>The AI proposes the basket.<br><span class="accent">It also says when not to trust it.</span></h2>
+ <p class="lead">Two ways into the same policy pipeline — find a product you already have in mind, or describe a need and let Nemotron work out what to buy.</p>
+ <div class="split">
+  <div class="panel discover"><div class="owner">Find products</div><h3>Search 17,546 real SKUs</h3><p>Natural-language search over the Junction26 catalogue, not just exact names.</p><ul><li>“Something creamy and lactose-free for a dessert” → ranked, real SKUs</li><li>Every result ships with a plain-language reason</li><li>A relevant-looking match that's out of stock or carries a banned allergen is labelled “blocked by buyer policy” — never recommended as if it were clean</li></ul></div>
+  <div class="panel plan"><div class="owner amber">Plan an order</div><h3>From a dish to a basket</h3><p>Start from a seasonal occasion or describe your own menu and covers.</p><ul><li>Pikkujoulu, winter game, root vegetables — or your own dish</li><li>Ingredients → matched products → quantities, sized to covers</li><li>Dilution-aware math for concentrates; surplus and low-confidence lines flagged before you evaluate</li></ul></div>
+ </div>
+ <div class="interactive">
+  <div class="kicker">Real lines from a live test run — explore the match confidence</div>
+  <div class="controls">
+   <button class="choice active" data-case="glogi">Glögi concentrate · dilution</button>
+   <button class="choice" data-case="gingerbread">Gingerbread · pack size</button>
+   <button class="choice" data-case="raisins">Raisins · surplus</button>
+   <button class="choice" data-case="oatly">Dessert search · policy block</button>
+  </div>
+  <div class="result"><div><div id="pcandidate" style="font-weight:800;font-size:18px">Vip glögg concentrate 1+3 5l</div><p id="preason" style="font-size:14px;margin-top:7px">5.99 kg concentrate × 4 (the 1+3 ratio) = 23.96 kg prepared. 3 units cover a 60 L need — not the 4x undercount a literal reading of the pack size would give.</p></div><span class="status pass" id="pstatus">Good match</span></div>
+  <p class="notehint" style="margin-top:12px">Lines matched from the live, 17,546-SKU Junction26 catalogue. Delivery date, allergen and carbon checks still run on every line when it's evaluated — this panel is the discovery step, not the decision.</p>
+ </div>
+ <div class="quote">A confident match and an unverified guess should never look the same.</div>
+</section>
+<section class="slide" data-title="The proof" data-notes="Use the recipe-chemistry substitution scenario. Explain the three outcomes: selected, manual review due to missing reliability evidence, and rejected because hard carbon and composition constraints fail. Be precise that missing delivery history is not a zero reliability score.">
+ <div class="eyebrow">06 / The proof — recipe-safe substitution</div>
+ <h2>Not every alternative<br><span class="accent">deserves to be ordered.</span></h2>
+ <p class="lead">When the original coffee milk is unavailable, AIMO BRAIN evaluates alternatives against the buyer's recipe, allergen, carbon and delivery rules.</p>
+ <div class="interactive">
+  <div class="kicker">Explore the policy outcome</div>
+  <div class="controls">
+   <button class="choice active" data-case="selected">Candidate 01 · Lactose-free</button>
+   <button class="choice" data-case="review">Candidate 02 · Vanilla</button>
+   <button class="choice" data-case="rejected">Candidate 03 · Cream</button>
+  </div>
+  <div class="result"><div><div id="candidate" style="font-weight:800;font-size:18px">Valio coffee milk 5 dl lactose free</div><p id="reason" style="font-size:14px;margin-top:7px">Recipe composition matches. No banned allergens. Carbon footprint remains within the buyer's limit. Historical on-time delivery evidence meets the threshold.</p></div><span class="status pass" id="status">Selected</span></div>
+  <div class="grid3" style="margin-top:14px">
+   <div class="card"><div class="kicker">Recipe match</div><div class="metric" id="recipe">100/100</div><p>Nutritional composition</p></div>
+   <div class="card"><div class="kicker">Carbon intensity</div><div class="metric" id="carbon">1.1</div><p>kg CO₂e/kg · original 1.1</p></div>
+   <div class="card"><div class="kicker">Delivery evidence</div><div class="metric" id="reliability">100%</div><p id="relcaption">Historical on-time ratio</p></div>
+  </div>
+  <p class="notehint" style="margin-top:12px">Illustrative values from the demonstrated Junction26 sandbox scenario. Delivery reliability is an aggregate historical ratio; delivery count and measurement period are not supplied.</p>
+ </div>
+ <div class="quote">A trustworthy agent knows when NOT to buy.</div>
+</section>
+<section class="slide" data-title="Why it matters" data-notes="Speak to all stakeholders. Avoid unverified ROI or margin claims. The value proposition is controlled automation, fewer manual handoffs, transparent exceptions and retained commercial authority.">
+ <div class="eyebrow">07 / Why it matters</div>
+ <h2>Automation without<br><span class="accent">giving up control.</span></h2>
+ <p class="lead">The value is different for each side — and shared where trust matters most.</p>
+ <div class="grid3">
+  <div class="card"><div class="num">01 / THE KITCHEN</div><h3>Less manual coordination</h3><p>Buyer requirements travel with the request. Alternatives — and whole baskets — are checked against the kitchen's own rules before an order proceeds.</p></div>
+  <div class="card"><div class="num">02 / THE SUPPLIER</div><h3>Commercial authority stays put</h3><p>Supplier-side limits and approvals remain supplier-owned. A buyer agent cannot waive them.</p></div>
+  <div class="card"><div class="num">03 / BOTH SIDES</div><h3>Decisions you can explain</h3><p>Exceptions are surfaced, approval ownership is clear and decision reasons are recorded for review.</p></div>
+ </div>
+ <div class="two-cols">
+  <div class="panel"><div class="owner">Exception-ready</div><h3>When reality changes</h3><p>Out of stock. Partial availability. A substitute that breaks a recipe. A delivery date outside tolerance. The workflow handles the exception instead of hiding it.</p></div>
+  <div class="panel"><div class="owner">Evidence-led</div><h3>Every decision has context</h3><p>Who made the decision, which policy applied, what evidence was available and why the workflow continued, stopped or asked for approval.</p></div>
+ </div>
+ <div class="quote">Autonomy without surrendering authority.</div>
+</section>
+<section class="slide" data-title="What's next" data-notes="This is the honesty slide — judges often ask what you'd do next, and a grounded answer builds more credibility than pretending the prototype is finished. All three items are real engineering debt we already identified, not invented roadmap filler.">
+ <div class="eyebrow">08 / What's next</div>
+ <h2>The hard parts are solved.<br><span class="accent">Here's what we'd harden next.</span></h2>
+ <p class="lead">This is a Junction26 prototype on sandbox data. Three concrete steps on the way to production.</p>
+ <div class="grid3">
+  <div class="card"><div class="num">01 / COMMERCE</div><h3>Real supplier authentication</h3><p>Move from the hackathon's API-key stand-in to the documented OAuth2 client-credentials flow, so any authorized buyer agent can trade, not just this demo.</p></div>
+  <div class="card"><div class="num">02 / DATA</div><h3>Structured pack data</h3><p>Replace name-parsed pack sizes and dilution ratios with structured catalogue fields, so every order quantity is calculated, never estimated from text.</p></div>
+  <div class="card"><div class="num">03 / SCALE</div><h3>More suppliers, one basket</h3><p>Extend the planner to compare and split a basket across multiple suppliers, under the same independent buyer/supplier policy model.</p></div>
+ </div>
+ <div class="quote">A prototype that's honest about what's next is more trustworthy than one that pretends to be finished.</div>
+</section>
+<section class="slide" data-title="Architecture & proof" data-notes="Close with what is implemented. Catalogue count and product/stock/price are from the Junction26 challenge sandbox, not a production feed. Explain mock_verified as sandbox provenance, not cryptographic verification. The Nemotron assistant is deliberately timeout-safe — a slow call falls back to keyword search or a clear message, never a platform error page. Invite judges to open the live demo.">
+ <div class="eyebrow">09 / Architecture &amp; proof</div>
+ <h2>Built for autonomous trade.<br><span class="accent">Designed for accountability.</span></h2>
+ <p class="lead">A practical end-to-end prototype connecting AI-assisted discovery and planning with independent policy decisions and an auditable order flow.</p>
+ <div class="arch">
+  <div class="archbox"><strong>Nemotron assistant</strong><small>Search · seasonal inspiration · menu planning · outcome narration — fails gracefully, never a broken response</small></div>
+  <div class="archmid">⇄</div>
+  <div class="archbox"><strong>Valio Aimo Junction26 API</strong><small>Sandbox catalogue · quotes · orders · approvals</small></div>
+ </div>
+ <div class="arch" style="grid-template-columns:1fr auto 1fr;margin-top:12px">
+  <div class="archbox"><strong>Buyer policy engine</strong><small>Buyer-owned constraints and approval rules</small></div><div class="archmid">+</div><div class="archbox"><strong>Supplier policy engine</strong><small>Supplier-owned commercial constraints and approvals</small></div>
+ </div>
+ <div class="archbox" style="margin-top:12px"><strong>Decision audit trail</strong><small>Decision owner · rule applied · evidence · reason · outcome</small></div>
+ <div class="proof">
+  <div class="card"><div class="metric">17,546</div><p>Junction26 catalogue SKUs</p></div>
+  <div class="card"><div class="metric">05</div><p>End-to-end scenarios</p></div>
+  <div class="card"><div class="metric">03</div><p>AI entry points: search · seasonal · planner</p></div>
+  <div class="card"><div class="metric">2-sided</div><p>Independent policy ownership</p></div>
+  <div class="card"><div class="metric">Audit</div><p>Decision reasons recorded</p></div>
+  <div class="card"><div class="metric">Toggle</div><p>Buyer/supplier rules viewer — no login needed to demo</p></div>
+ </div>
+ <div class="footerquote">We are not building an AI that simply buys things. We are building the trust layer that lets two independent sides trade autonomously.</div>
+ <div style="margin-top:18px"><a href="https://aimobrain.vercel.app/" target="_blank" rel="noopener" style="display:inline-block;text-decoration:none;background:var(--teal);color:#05201e;font-weight:850;padding:13px 18px;border-radius:9px">EXPLORE THE LIVE DEMO ↗</a> <span class="notehint" style="margin-left:12px">Junction26 challenge sandbox — not a production feed.</span></div>
+</section>
+</main>
+<div class="notes" id="notes"><h3 id="noteTitle">Presenter notes</h3><p id="noteText"></p><p class="notehint" style="margin-top:12px">Press N or use the Notes button to close.</p></div>
+<footer class="bottom">
+ <div style="display:flex;gap:8px;align-items:center"><button class="navbtn" id="prev">← <span class="hide">Previous</span></button><button class="navbtn" id="next">Next →</button></div>
+ <div class="dots" id="dots"></div>
+ <div style="display:flex;gap:10px;align-items:center"><span class="counter" id="counter">01 / 09</span><button class="navbtn" id="notesBtn">Notes</button><button class="navbtn" id="full">Fullscreen</button></div>
+</footer>
+<script>
+const slides=[...document.querySelectorAll('.slide')];let index=0;
+const dots=document.getElementById('dots');
+slides.forEach((s,i)=>{const b=document.createElement('button');b.setAttribute('aria-label','Go to slide '+(i+1));b.onclick=()=>go(i);dots.appendChild(b)});
+function go(n){index=Math.max(0,Math.min(slides.length-1,n));slides.forEach((s,i)=>s.classList.toggle('active',i===index));[...dots.children].forEach((b,i)=>b.classList.toggle('active',i===index));document.getElementById('counter').textContent=String(index+1).padStart(2,'0')+' / '+String(slides.length).padStart(2,'0');document.getElementById('prev').disabled=index===0;document.getElementById('next').disabled=index===slides.length-1;document.getElementById('noteTitle').textContent=slides[index].dataset.title+' — presenter notes';document.getElementById('noteText').textContent=slides[index].dataset.notes;document.getElementById('notes').classList.remove('open')}
+document.getElementById('prev').onclick=()=>go(index-1);document.getElementById('next').onclick=()=>go(index+1);
+document.getElementById('notesBtn').onclick=()=>document.getElementById('notes').classList.toggle('open');
+document.getElementById('full').onclick=()=>{if(!document.fullscreenElement)document.documentElement.requestFullscreen?.();else document.exitFullscreen?.()};
+document.addEventListener('keydown',e=>{if(e.target.matches('button,input,textarea'))return;if(e.key==='ArrowRight'||e.key===' '){e.preventDefault();go(index+1)}if(e.key==='ArrowLeft'){e.preventDefault();go(index-1)}if(e.key.toLowerCase()==='n')document.getElementById('notes').classList.toggle('open');if(e.key.toLowerCase()==='f')document.getElementById('full').click()});
+const cases={
+ selected:{name:'Valio coffee milk 5 dl lactose free',reason:'Recipe composition matches. No banned allergens. Carbon footprint remains within the buyer\'s limit. Historical on-time delivery evidence meets the threshold.',status:'Selected',cls:'pass',recipe:'100/100',carbon:'1.1',reliability:'100%',relcaption:'Historical on-time ratio'},
+ review:{name:'Valio coffee milk drink vanilla 1 l lactose free UHT',reason:'Composition is within the recipe tolerance and carbon is unchanged, but there is no historical delivery evidence. The buyer policy does not allow automatic selection without the required reliability evidence.',status:'Manual review',cls:'review',recipe:'81/100',carbon:'1.1',reliability:'—',relcaption:'No delivery history available'},
+ rejected:{name:'Arla Café 1 L lactose-free cream',reason:'Rejected by buyer policy: fat content changes from 2 g to 10 g per 100 g, outside the recipe tolerance. Carbon intensity is 1.81 kg CO₂e/kg, a 65% increase against the 20% maximum.',status:'Rejected',cls:'block',recipe:'61/100',carbon:'1.81',reliability:'—',relcaption:'No delivery history available'}
+};
+document.querySelectorAll('[data-case]').forEach(btn=>btn.onclick=()=>{
+ const group=btn.closest('.interactive').querySelectorAll('[data-case]');
+ group.forEach(x=>x.classList.remove('active'));btn.classList.add('active');
+ const key=btn.dataset.case;
+ if(cases[key]){
+  const c=cases[key];document.getElementById('candidate').textContent=c.name;document.getElementById('reason').textContent=c.reason;const st=document.getElementById('status');st.textContent=c.status;st.className='status '+c.cls;['recipe','carbon','reliability','relcaption'].forEach(k=>document.getElementById(k).textContent=c[k]);
+ }else if(planCases[key]){
+  const c=planCases[key];document.getElementById('pcandidate').textContent=c.name;document.getElementById('preason').textContent=c.reason;const st=document.getElementById('pstatus');st.textContent=c.status;st.className='status '+c.cls;
+ }else if(rulesCases[key]){
+  const c=rulesCases[key];document.getElementById('rcandidate').textContent=c.name;document.getElementById('rreason').textContent=c.reason;const st=document.getElementById('rstatus');st.textContent=c.status;st.className='status '+c.cls;document.getElementById('rlocked').textContent=c.locked;
+ }
+});
+const planCases={
+ glogi:{name:'Vip glögg concentrate 1+3 5l',status:'Good match',cls:'pass',reason:'5.99 kg concentrate × 4 (the 1+3 ratio) = 23.96 kg prepared. 3 units cover a 60 L need — not the 4x undercount a literal reading of the pack size would give.'},
+ gingerbread:{name:'Annas Original gingerbread cookie 300g',status:'Estimated match',cls:'review',reason:'Pack size read from the product name, not structured catalogue data. Shown as an estimate, never as a confident recommendation.'},
+ raisins:{name:'URTEKRAM Organic Dark raisins 2.5kg',status:'Needs review',cls:'block',reason:'The catalogue match is exact, but one pack covers more than double the 1.2 kg actually needed. Flagged as a surplus exception before the basket is evaluated.'},
+ oatly:{name:'Oatly soft serve, vegetable-based preparation 1.0 L',status:'Needs review',cls:'block',reason:'Reads as a fit for "something creamy and lactose-free for a dessert" — but it is out of stock and contains banned allergen code AW. The AI says so instead of recommending it.'}
+};
+const rulesCases={
+ buyer:{name:'Buyer-owned — Hotel Espoo\'s kitchen policy',status:'Visible',cls:'pass',reason:'Banned allergen code AW (tree nuts) · max delivery deviation 1 day · minimum delivery reliability 95% for an AI-picked substitute · max carbon increase 20% over the original.',locked:'🔒 Aimo\'s credit limit and auto-approve ceiling are not shown from this seat.'},
+ supplier:{name:'Supplier-owned — Aimo\'s commercial rules for this buyer',status:'Visible',cls:'pass',reason:'Credit limit €5,000 · auto-approve ceiling €2,000 — orders above the ceiling still need a human, even within the credit limit.',locked:'🔒 The buyer\'s allergen, recipe and carbon rules are not shown from this seat.'}
+};
+go(0);
+</script>
+
+</body>
+</html>

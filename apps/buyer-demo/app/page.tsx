@@ -1944,6 +1944,9 @@ export default function Page() {
             <a href="#explorer" className="header-search" aria-label="Search the catalog">
               <SearchIcon />
             </a>
+            <a href="/pitch-deck.html" target="_blank" rel="noopener" className="btn btn-white">
+              Pitch deck ↗
+            </a>
             <a href="#scenarios" className="btn btn-lime">
               Explore demo
             </a>
@@ -2232,7 +2235,11 @@ export default function Page() {
           <p className="note">
             AIMO BRAIN — a Junction 2026 hackathon project for the Valio Aimo challenge. All price, stock and allergen data is from Valio
             Aimo&apos;s Junction26 challenge sandbox — not a production feed. See README.md for what&apos;s real, what&apos;s inferred, and
-            what&apos;s invented for this demo.
+            what&apos;s invented for this demo, or the{" "}
+            <a href="/pitch-deck.html" target="_blank" rel="noopener">
+              pitch deck
+            </a>{" "}
+            for the full story.
           </p>
         </div>
       </footer>
