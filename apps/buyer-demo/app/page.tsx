@@ -1945,6 +1945,9 @@ export default function Page() {
             <a className="utility-tab" href="#roles">
               <RoleIcon name="audit" /> Audit
             </a>
+            <a className="utility-tab" href="/pitch-deck.html" target="_blank" rel="noopener">
+              Pitch deck ↗
+            </a>
           </nav>
           <span className="utility-lang">Junction26 · EN</span>
         </div>
@@ -1965,9 +1968,6 @@ export default function Page() {
           <div className="header-actions">
             <a href="#explorer" className="header-search" aria-label="Search the catalog">
               <SearchIcon />
-            </a>
-            <a href="/pitch-deck.html" target="_blank" rel="noopener" className="btn btn-white">
-              Pitch deck ↗
             </a>
             <a href="#scenarios" className="btn btn-lime">
               Explore demo
