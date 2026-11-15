@@ -26,6 +26,9 @@ p{color:var(--muted);line-height:1.6;font-size:16px;margin:0}
 .hero-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:5vw;align-items:center;height:100%}
 .hero-art{border:1px solid var(--line);border-radius:24px;padding:26px;background:linear-gradient(145deg,rgba(19,57,62,.8),rgba(9,24,29,.9));position:relative;overflow:hidden;min-height:370px;display:flex;flex-direction:column;justify-content:center;gap:18px}
 .hero-art:after{content:"";position:absolute;width:280px;height:280px;border:1px solid rgba(67,221,195,.18);border-radius:50%;right:-90px;top:-80px;box-shadow:0 0 0 35px rgba(67,221,195,.035),0 0 0 75px rgba(67,221,195,.025)}
+.hero-art-image{padding:0;min-height:0;display:block}
+.hero-art-image:after{display:none}
+.hero-art-image img{width:100%;height:auto;aspect-ratio:1672/941;object-fit:contain;border-radius:24px;display:block}
 .agent{border:1px solid var(--line);background:rgba(6,19,23,.75);border-radius:14px;padding:18px;position:relative;z-index:1}
 .agent small{color:var(--teal);letter-spacing:.13em;font-weight:800;font-size:10px}.agent strong{display:block;font-size:21px;margin:7px 0}.agent span{font-size:13px;color:var(--muted)}
 .connector{height:24px;border-left:1px dashed var(--teal);margin-left:34px;position:relative;z-index:1}
@@ -97,11 +100,8 @@ p{color:var(--muted);line-height:1.6;font-size:16px;margin:0}
    <p class="lead">A kitchen needs the right product, at the right price, with the right ingredients and delivery. A supplier has its own stock, credit limits and approval rules.</p>
    <div class="quote">A product match is not the same as an acceptable transaction.</div>
   </div>
-  <div class="hero-art">
-   <div class="agent"><small>BUYER SIDE</small><strong>“Will this work for my kitchen?”</strong><span>Budget · allergens · recipe · carbon · delivery</span></div>
-   <div class="connector"></div>
-   <div class="agent"><small>SUPPLIER SIDE</small><strong>“Can we accept this order?”</strong><span>Availability · commercial limits · approvals</span></div>
-   <div style="position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end"><span class="pill"><i class="dot"></i> Two sets of rules</span><span class="pill"><i class="dot"></i> One trusted trade</span></div>
+  <div class="hero-art hero-art-image">
+   <img src="pitch-deck-hero.webp" alt="AIMO BRAIN: find products, plan a menu, build a basket and purchase with policy checks, flowing through independent buyer and supplier policy engines to a confirmed order." />
   </div>
  </div>
 </section>
