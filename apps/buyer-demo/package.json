@@ -9,7 +9,9 @@
     "start": "next start",
     "demo": "tsx scripts/demo.ts",
     "llm:smoke": "tsx scripts/llm-smoke.ts",
-    "build:catalog-index": "tsx scripts/build-catalog-index.ts"
+    "build:catalog-index": "tsx scripts/build-catalog-index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@aimo/shared": "0.1.0",

@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState } from "react";
+import { orgsEnabled } from "../lib/features";
 import { formatEur, type AlternativeReview, type Outcome, type ScenarioResult, type StepStatus } from "../lib/scenarios";
 import { HOTEL_ESPOO_POLICY, RELIABILITY_DISCLOSURE_CAVEAT, type CheckResult } from "../lib/policyEngine";
 import type { AuditEvent, ProductFacts, ProductLookupResult, QuoteLine, TrustEnvelope } from "@aimo/shared";
@@ -1948,6 +1949,11 @@ export default function Page() {
             <a className="utility-tab" href="/pitch-deck.html" target="_blank" rel="noopener">
               Pitch deck ↗
             </a>
+            {orgsEnabled() && (
+              <a className="utility-tab" href="/workspace">
+                Organizations (preview)
+              </a>
+            )}
           </nav>
           <span className="utility-lang">Junction26 · EN</span>
         </div>
