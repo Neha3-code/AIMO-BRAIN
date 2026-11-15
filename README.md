@@ -133,6 +133,67 @@ Neither file imports the other's config. `approval.owner` on a held order is
 always `"buyer"` or `"aimo"`, and `POST /v1/orders/:id/approve` enforces it:
 a buyer-side human cannot clear an Aimo-owned hold (403), and vice versa.
 
+## Status and direction
+
+This repository began as the Junction 2026 demo described on this page and is being extended
+into a multi-tenant trade platform. The demo is unchanged and remains the default experience.
+
+- `docs/IMPLEMENTATION_STATUS.md`: what is working, demo-only or missing, with known risks.
+- `docs/ARCHITECTURE.md`: components, routes, tenancy model and design decisions.
+- `docs/ROADMAP.md`: next tasks in order.
+
+Everything runs in **sandbox** mode. No code path submits an order to a real supplier, and
+`AIMO_ENV=production` refuses to start.
+
+## Organizations preview (feature flag)
+
+User accounts, buyer and supplier organizations, roles, member invitations and each
+organization's own versioned policy. Off by default. Policies saved here are recorded but **not
+yet enforced** on quotes or orders.
+
+| Flag | Where | Effect |
+|---|---|---|
+| `AIMO_FEATURE_ORGS=1` | `apps/aimo-api/.env` | Registers the `/v1/auth`, `/v1/me`, `/v1/organizations` and `/v1/invitations` routes |
+| `NEXT_PUBLIC_AIMO_FEATURE_ORGS=1` | `apps/buyer-demo/.env` | Enables `/workspace` and its session proxy |
+
+Try it with no database or API keys (in-memory, data is lost on exit):
+
+```bash
+npm install
+npm run dev:local -w @aimo/aimo-api               # API on :8080, organizations on
+NEXT_PUBLIC_AIMO_FEATURE_ORGS=1 npm run dev:web   # then open http://localhost:3000/workspace
+```
+
+On PowerShell, set the variable first: `$env:NEXT_PUBLIC_AIMO_FEATURE_ORGS = "1"; npm run dev:web`.
+The demo scenarios do not work in this mode because the catalogue is not seeded.
+
+To use it with a real database, run `npm run migrate` (applies `002_platform_tenancy.sql`,
+additive only) and set both flags. Accounts are sandbox-grade: no email verification, password
+reset or MFA yet.
+
+## Migrations
+
+`npm run migrate` applies `apps/aimo-api/migrations/*.sql` in filename order and records each
+in `schema_migrations`. `001_baseline.sql` is the original demo schema and is a no-op on an
+existing database. The database driver runs one statement per request with no transaction, so
+every statement in a migration must be idempotent, and a statement must not contain a semicolon.
+
+`npm run seed` is destructive for demo data: it truncates `products` and `buyers`, which also
+deletes all demo quotes and orders. It does not touch users or organizations.
+
+## Tests and checks
+
+```bash
+npm run typecheck   # both apps
+npm test            # 54 API tests + 19 buyer policy-engine tests
+```
+
+Tests need no database, network or secrets: the API suite runs the real migrations and SQL on an
+in-process Postgres (PGlite). They cover tenant isolation, role permissions, buyer-versus-supplier
+policy ownership and the existing demo order rules. The live scenarios are checked separately
+with `npm run demo`, which needs the seeded database and the Junction26 sandbox key. CI runs
+typecheck and tests on every pull request (`.github/workflows/ci.yml`).
+
 ## Running locally
 
 ```bash
